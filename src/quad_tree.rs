@@ -2,7 +2,7 @@ use crate::bounds::Bounds;
 use crate::collider2d::Collider2d;
 use ecs::*;
 use std::cell::{Cell, Ref, RefCell};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 const CHUNKS: usize = 4;
 const MAX_DEPTH: u32 = 3;
@@ -43,7 +43,7 @@ struct AreaNode {
     parent: Handle,
     bounds: Bounds,
     children: Option<[Handle; CHUNKS]>,
-    objects: RefCell<BTreeSet<Entity>>,
+    objects: RefCell<HashSet<Entity>>,
 }
 
 impl AreaNode {
@@ -68,10 +68,10 @@ impl AreaNode {
         objects.insert(object.clone());
     }
 
-    fn remove_object(&self, object: &Entity) {
+    fn remove_object(&self, object_id: &EntityId) {
         let mut objects = self.objects.borrow_mut();
-        println!("Object {:?} leave area {:?}", object, self.handle.index);
-        objects.remove(object);
+        println!("Object {:?} leave area {:?}", object_id, self.handle.index);
+        objects.retain(|k| k.get_id() == object_id.clone());
     }
 }
 
@@ -207,11 +207,7 @@ impl QuadTree {
         });
         if let Some(handle) = handle {
             if let Some(node) = &self.nodes[handle.index] {
-                let mut objects = node.objects.borrow_mut();
-
-                let ent = objects.iter().find(|x| x.get_id() == *id).unwrap();
-
-                objects.remove(ent);
+                node.remove_object(id);
             }
         }
     }
@@ -292,7 +288,7 @@ impl QuadTree {
                         let node = self.nodes[handle.index].as_ref().unwrap();
                         node.insert_object(entity);
                         if let Some(node) = &self.nodes[old_handle.index] {
-                            node.remove_object(entity);
+                            node.remove_object(&entity.get_id());
                         }
                     }
                 }

@@ -302,19 +302,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
-name = "hello_world"
-version = "0.1.0"
-dependencies = [
- "ecs",
- "ecs_derive",
- "gl",
- "glfw",
- "image",
- "nalgebra-glm",
- "rand",
-]
-
-[[package]]
 name = "hermit-abi"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -680,6 +667,19 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
  "num_cpus",
+]
+
+[[package]]
+name = "rust_game"
+version = "0.1.0"
+dependencies = [
+ "ecs",
+ "ecs_derive",
+ "gl",
+ "glfw",
+ "image",
+ "nalgebra-glm",
+ "rand",
 ]
 
 [[package]]
