@@ -274,10 +274,10 @@ impl Ecs {
         None
     }
 
-    pub fn get_component<T: 'static + Component + Clone>(&self, entity: &Entity) -> Option<T> {
+    pub fn get_component<T: 'static + Component + Clone>(&self, entity_id: EntityId) -> Option<T> {
         {
             let cache = self.entity_cache.borrow();
-            if !cache.is_entity_alive(entity.get_id()) {
+            if !cache.is_entity_alive(entity_id) {
                 return None;
             }
         }
@@ -285,7 +285,7 @@ impl Ecs {
         if let Some(container) = self.get_container::<T>() {
             let container = container.deref().borrow();
 
-            if let Some(component) = container.get(entity.entity_id.0) {
+            if let Some(component) = container.get(entity_id.0) {
                 return component.clone();
             }
         }

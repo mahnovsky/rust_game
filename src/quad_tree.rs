@@ -43,7 +43,7 @@ struct AreaNode {
     parent: Handle,
     bounds: Bounds,
     children: Option<[Handle; CHUNKS]>,
-    objects: RefCell<HashSet<Entity>>,
+    objects: RefCell<HashSet<EntityId>>,
 }
 
 impl AreaNode {
@@ -61,17 +61,17 @@ impl AreaNode {
         None
     }
 
-    fn insert_object(&self, object: &Entity) {
+    fn insert_object(&self, object_id: EntityId) {
         let mut objects = self.objects.borrow_mut();
 
-        println!("Object {:?} enter area {:?}", object, self.handle.index);
-        objects.insert(object.clone());
+        println!("Object {:?} enter area {:?}", object_id, self.handle.index);
+        objects.insert(object_id);
     }
 
-    fn remove_object(&self, object_id: &EntityId) {
+    fn remove_object(&self, object_id: EntityId) {
         let mut objects = self.objects.borrow_mut();
         println!("Object {:?} leave area {:?}", object_id, self.handle.index);
-        objects.retain(|k| k.get_id() == object_id.clone());
+        objects.remove(&object_id);
     }
 }
 
@@ -196,12 +196,12 @@ impl QuadTree {
         prev_handle
     }
 
-    pub fn on_entity_removed(&self, id: &EntityId) {
+    pub fn on_entity_removed(&self, id: EntityId) {
         let handle = self.find_child_node_if(self.root.unwrap(), |node| {
             if let Some(node) = node {
                 let objects = node.objects.borrow();
 
-                return objects.iter().find(|x| x.get_id() == *id).is_some();
+                return objects.contains(&id);
             }
             false
         });
@@ -221,7 +221,7 @@ impl QuadTree {
             if let Some(handle) = handle {
                 let node = self.nodes[handle.index].as_ref().unwrap();
 
-                node.insert_object(entity);
+                node.insert_object(entity.get_id());
                 entity.visit::<Collider2d>(|collider| {
                     if let Some(collider) = collider {
                         collider.set_area_handle(Some(handle));
@@ -245,8 +245,8 @@ impl QuadTree {
             if handle.index < nodes_count {
                 let node = self.nodes[handle.index].as_ref().unwrap();
                 for c in node.objects.borrow().iter().filter_map(|e| {
-                    if e != entity && !collider.is_ignored_entity(e.get_id()) {
-                        ecs.get_component::<Collider2d>(e)
+                    if *e != entity.get_id() && !collider.is_ignored_entity(*e) {
+                        ecs.get_component::<Collider2d>(*e)
                     } else {
                         None
                     }
@@ -274,7 +274,7 @@ impl QuadTree {
     }
 
     pub fn move_object(&self, ecs: &Ref<'_, Ecs>, entity: &Entity, new_pos: glm::Vec2) -> bool {
-        if let Some(collider) = ecs.get_component::<Collider2d>(entity) {
+        if let Some(collider) = ecs.get_component::<Collider2d>(entity.get_id()) {
             let mut bounds = collider.get_bounds();
             bounds.set_center_position(new_pos.x, new_pos.y);
             let handle = self.get_place_node(&bounds);
@@ -286,9 +286,9 @@ impl QuadTree {
                 if let Some(old_handle) = collider.get_area_handle() {
                     if old_handle != handle {
                         let node = self.nodes[handle.index].as_ref().unwrap();
-                        node.insert_object(entity);
+                        node.insert_object(entity.get_id());
                         if let Some(node) = &self.nodes[old_handle.index] {
-                            node.remove_object(&entity.get_id());
+                            node.remove_object(entity.get_id());
                         }
                     }
                 }

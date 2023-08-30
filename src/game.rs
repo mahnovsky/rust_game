@@ -295,11 +295,6 @@ impl Game {
     }
 
     pub fn update(&mut self, dt: f32) {
-        let f = |x| match x {
-            EcsEvent::EntityDestroyed(id) => self.quad_tree.on_entity_removed(&id),
-            _ => {}
-        };
-
         //self.map.update(&self.world);
         self.update_input(dt);
         self.spawn_bullets();
