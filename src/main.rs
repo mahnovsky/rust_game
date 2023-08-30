@@ -1,18 +1,16 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-mod draw_instance;
-mod gl_wrappers;
-mod render;
-mod sprite;
-#[macro_use]
-//mod world;
-mod game;
 mod bounds;
 mod collider2d;
+mod draw_instance;
+mod game;
+mod gl_wrappers;
 mod map;
 mod object_components;
 mod quad_tree;
+mod render;
+mod sprite;
 mod transform;
 
 extern crate core;
@@ -30,6 +28,7 @@ fn main() {
     glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
     //glfwWindowHint(GLFW_RESIZABLE, GL_FALSE)
     glfw.window_hint(WindowHint::Resizable(false));
+
     // Create a windowed mode window and its OpenGL context
     let (mut window, events) = glfw
         .create_window(1024, 768, "Battle tanks", glfw::WindowMode::Windowed)
@@ -53,12 +52,15 @@ fn main() {
     game.init(&mut render);
     // Make the window's context current
     window.make_current();
+    glfw.set_swap_interval(glfw::SwapInterval::None);
+
     window.set_key_polling(true);
     render::load_projection_matrix(&render.get_shader("default").unwrap(), w as u32, h as u32);
     let mut ms_time: u128;
     let mut fps: u32 = 0;
     let mut timer: f64 = 0.;
     let mut delta: f64 = 0.;
+
     // Loop until the user closes the window
     while !window.should_close() {
         ms_time = SystemTime::now()

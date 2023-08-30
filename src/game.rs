@@ -128,7 +128,6 @@ pub struct Game {
     bullets: RefCell<Vec<Box<dyn FnOnce()>>>,
     frame_counter: u32,
     quad_tree: QuadTree,
-    event_queue: EventQueue,
 }
 
 fn test(x: &EcsEvent) {}
@@ -143,7 +142,6 @@ impl Game {
             bullets: RefCell::new(Vec::new()),
             frame_counter: 0,
             quad_tree: QuadTree::new(Bounds::new(0_f32, 0_f32, width as f32, height as f32)),
-            event_queue: EventQueue::default(),
         }
     }
 
@@ -302,7 +300,6 @@ impl Game {
             _ => {}
         };
 
-        self.event_queue.dispatch(&[&self.quad_tree]);
         //self.map.update(&self.world);
         self.update_input(dt);
         self.spawn_bullets();

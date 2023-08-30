@@ -1,6 +1,3 @@
-use std::default;
-use std::env::Args;
-use std::marker::PhantomData;
 use std::ops::FnMut;
 use std::{any::Any, any::TypeId, collections::HashMap};
 
@@ -11,8 +8,6 @@ struct MyEvent {
 }
 
 trait EventTrait<E>: FnMut(&E) {
-    //fn get_type_id(&self) -> TypeId;
-
     fn process(&mut self, event: &E);
 }
 
@@ -89,7 +84,7 @@ impl Events {
         }
     }
 
-    fn add_receiver<E: Sized + 'static, Func: StoredFunc<E> + 'static>(
+    pub fn add_receiver<E: Sized + 'static, Func: StoredFunc<E> + 'static>(
         &mut self,
         f: Func,
     ) -> Option<usize> {
@@ -107,7 +102,7 @@ impl Events {
         None
     }
 
-    fn push_event<E: Sized + 'static>(&mut self, event: &E) {
+    pub fn push_event<E: Sized + 'static>(&mut self, event: &E) {
         let id = TypeId::of::<E>();
 
         if let Some(stor) = self.storages.get_mut(&id) {
@@ -119,7 +114,7 @@ impl Events {
         }
     }
 
-    fn get_events<E: Clone + Sized + 'static>(&mut self, index: usize) -> Option<Vec<E>> {
+    pub fn get_events<E: Clone + Sized + 'static>(&mut self, index: usize) -> Option<Vec<E>> {
         let id = TypeId::of::<E>();
 
         if let Some(stor) = self.storages.get_mut(&id) {
@@ -130,71 +125,14 @@ impl Events {
         None
     }
 
-    fn flush(&mut self) {
+    pub fn flush(&mut self) {
         for (_, stor) in &mut self.storages {
             stor.flush();
         }
     }
 }
 
-fn process_event(event: &MyEvent) {
-    let MyEvent {
-        message,
-        random_value,
-    } = event;
-    println!("MyEvent on procced {message}, {random_value}");
-}
-
-struct World {
-    my_event_handle: Option<usize>,
-    mouse_event_handle: Option<usize>,
-}
-
-impl World {
-    fn new() -> Self {
-        Self {
-            my_event_handle: None,
-            mouse_event_handle: None,
-        }
-    }
-
-    fn subscribe(&mut self, stor: &mut Events) {
-        self.my_event_handle = stor.add_receiver(EventListener::<MyEvent>::new());
-        self.mouse_event_handle = stor.add_receiver(EventListener::<MouseEvent>::new());
-    }
-
-    fn process_my_event(&mut self, stor: &mut Events) {
-        if let Some(handle) = self.my_event_handle {
-            let events = stor.get_events::<MyEvent>(handle).unwrap();
-
-            for event in &events {
-                let MyEvent {
-                    message,
-                    random_value,
-                } = event;
-                println!("Process events from MyEvent {message}, {random_value}");
-            }
-        }
-    }
-
-    fn process_mouse_event(&mut self, stor: &mut Events) {
-        if let Some(handle) = self.mouse_event_handle {
-            let events = stor.get_events::<MouseEvent>(handle).unwrap();
-
-            for event in &events {
-                let MouseEvent { x, y } = event;
-                println!("Process events from MouseEvent {x}, {y}");
-            }
-        }
-    }
-
-    fn update(&mut self, stor: &mut Events) {
-        self.process_my_event(stor);
-        self.process_mouse_event(stor);
-    }
-}
-
-struct EventListener<E> {
+pub struct EventListener<E> {
     events: Vec<E>,
 }
 
@@ -216,59 +154,4 @@ impl<E: 'static + Sized + Clone> StoredFunc<E> for EventListener<E> {
     fn flush_events(&mut self) {
         self.events.clear();
     }
-}
-
-#[derive(Clone)]
-struct MouseEvent {
-    x: f32,
-    y: f32,
-}
-
-fn process_mouse_event(me: &MouseEvent) {
-    let MouseEvent { x, y } = me;
-    println!("Mouse event processing {x}, {y}");
-}
-
-struct Game {
-    world: World,
-    events: Events,
-}
-
-impl Game {
-    fn new() -> Self {
-        let mut events = Events::new();
-        let mut world = World::new();
-
-        world.subscribe(&mut events);
-
-        Self { world, events }
-    }
-
-    fn update(&mut self) {
-        self.world.update(&mut self.events);
-
-        self.events.flush();
-    }
-
-    fn push_event<E: Clone + Sized + 'static>(&mut self, event: &E) {
-        self.events.push_event(event);
-    }
-}
-
-fn main() {
-    let mut game = Game::new();
-
-    game.push_event(&MyEvent {
-        message: "hello".to_owned(),
-        random_value: 12_f32,
-    });
-
-    game.push_event(&MyEvent {
-        message: "test".to_owned(),
-        random_value: 32_f32,
-    });
-
-    game.push_event(&MouseEvent { x: 0.32, y: 12.22 });
-
-    game.update();
 }

@@ -313,21 +313,3 @@ impl QuadTree {
         false
     }
 }
-
-impl BaseListenerTrait for QuadTree {
-    fn on_event(&self, e: &dyn EventTrait) {
-        let id = e.get_event_id();
-        match id {
-            EcsEvent::INDEX => {
-                if let Some(event) = e.as_any().downcast_ref::<EcsEvent>() {
-                    self.on_event_t(*event);
-                }
-            }
-            _ => todo!(),
-        }
-    }
-}
-
-impl ListenerTrait<EcsEvent> for QuadTree {
-    fn on_event_t(&self, e: EcsEvent) {}
-}

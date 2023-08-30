@@ -1,5 +1,4 @@
 use bit_vec::BitVec;
-use ecs_derive::event_impl;
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::clone::Clone;
@@ -9,11 +8,10 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 
-mod event_queue;
+mod events;
 
-pub use event_queue::*;
+pub use events::*;
 
-#[event_impl]
 #[derive(Clone, Copy)]
 pub enum EcsEvent {
     EntityCreated(EntityId),
