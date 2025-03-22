@@ -1,16 +1,5 @@
 use std::ops::FnMut;
 use std::{any::Any, any::TypeId, collections::HashMap};
-
-#[derive(Clone)]
-struct MyEvent {
-    pub message: String,
-    pub random_value: f32,
-}
-
-trait EventTrait<E>: FnMut(&E) {
-    fn process(&mut self, event: &E);
-}
-
 trait BaseStorage {
     fn get_stored_type_id(&self) -> TypeId;
 
@@ -21,7 +10,7 @@ trait BaseStorage {
     fn flush(&mut self);
 }
 
-trait StoredFunc<Event> {
+pub trait StoredFunc<Event> {
     fn run(&mut self, input: &Event);
 
     fn get_events(&mut self) -> Option<Vec<Event>> {
@@ -73,12 +62,12 @@ impl<E: Sized + 'static> BaseStorage for Storage<E> {
     }
 }
 
-struct Events {
+pub struct Events {
     storages: HashMap<TypeId, Box<dyn BaseStorage>>,
 }
 
 impl Events {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             storages: HashMap::new(),
         }
@@ -137,7 +126,7 @@ pub struct EventListener<E> {
 }
 
 impl<E: 'static + Sized + Clone> EventListener<E> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self { events: Vec::new() }
     }
 }

@@ -56,18 +56,14 @@ fn main() {
 
     window.set_key_polling(true);
     render::load_projection_matrix(&render.get_shader("default").unwrap(), w as u32, h as u32);
-    let mut ms_time: u128;
     let mut fps: u32 = 0;
     let mut timer: f64 = 0.;
     let mut delta: f64 = 0.;
 
     // Loop until the user closes the window
     while !window.should_close() {
-        ms_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros();
-        // Poll for and process events
+        let tp = SystemTime::now();
+
         glfw.poll_events();
         for (_, event) in glfw::flush_messages(&events) {
             //println!("{:?}", event);
@@ -88,11 +84,12 @@ fn main() {
         window.swap_buffers();
         //unsafe { gl::Flush(); }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros();
-        delta = (now - ms_time) as f64 * 0.000001;
+        delta = if let Ok(frame_time) = SystemTime::now().duration_since(tp) {
+            frame_time.as_secs_f64()
+        } else {
+            0.0
+        };
+
         fps += 1;
         timer += delta;
         if timer > 1. {

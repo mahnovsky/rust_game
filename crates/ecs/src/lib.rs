@@ -414,4 +414,8 @@ impl Ecs {
             f(e1, e2);
         }
     }
+
+    fn update(&mut self) {
+        
+    }
 }
