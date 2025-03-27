@@ -131,7 +131,6 @@ pub struct Game {
 }
 
 fn test(x: EcsEvent) {
-
     println!("Test {:?}", x);
 }
 
@@ -176,11 +175,6 @@ impl Game {
     }
 
     pub fn init(&mut self, render: &mut Render) {
-        
-        let mut ecs = self.world.deref().borrow_mut();
-        ecs.events.add_receiver(test);
-        drop(ecs);
-        
         self.players[0] = self.create_player(
             render,
             &[
@@ -277,6 +271,8 @@ impl Game {
                 if let Some(entity) = transform.entity.upgrade() {
                     if self.quad_tree.move_object(&ecs, &entity, new_pos) {
                         transform.set_position(&new_pos);
+                    } else {
+                        println!("Cant move help!!!");
                     }
                 }
 

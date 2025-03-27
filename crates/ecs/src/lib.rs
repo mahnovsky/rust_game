@@ -194,7 +194,7 @@ pub struct Ecs {
     entity_counter: Cell<usize>,
     components: Vec<Option<Box<dyn ComponentContainer>>>,
     entity_cache: RefCell<EntityCash>,
-    pub events: Events, 
+    pub events: RefCell<EventSystem>,
 }
 
 impl Debug for Ecs {
@@ -209,7 +209,7 @@ impl Default for Ecs {
             entity_counter: Cell::new(0),
             components: Vec::new(),
             entity_cache: RefCell::new(EntityCash::new()),
-            events: Events::new(),
+            events: RefCell::new(EventSystem::new()),
         }
     }
 }
@@ -226,7 +226,7 @@ impl Ecs {
             components: v,
             entity_counter: Cell::new(0),
             entity_cache: RefCell::new(EntityCash::new()),
-            events: Events::new(),
+            events: RefCell::new(EventSystem::new()),
         }
     }
 
@@ -239,8 +239,9 @@ impl Ecs {
     fn add_entity(&self, entity: Rc<Entity>) -> EntityWeak {
         let mut cache = self.entity_cache.borrow_mut();
 
-        let e = EcsEvent::EntityCreated(entity.entity_id);
-        self.events.push_event(e);
+        let mut events = self.events.borrow_mut();
+        events.push_event(EcsEvent::EntityCreated(entity.entity_id));
+        drop(events);
 
         cache.add_entity(entity)
     }
@@ -248,8 +249,9 @@ impl Ecs {
     pub fn remove_entity(&self, entity_id: EntityId) {
         let mut cache = self.entity_cache.borrow_mut();
 
-        let e = EcsEvent::EntityCreated(entity_id);
-        self.events.push_event(e);
+        let mut events = self.events.borrow_mut();
+        events.push_event(EcsEvent::EntityDestroyed(entity_id));
+        drop(events);
 
         cache.remove_entity(entity_id);
     }
@@ -424,7 +426,5 @@ impl Ecs {
         }
     }
 
-    fn update(&mut self) {
-        
-    }
+    fn update(&mut self) {}
 }
