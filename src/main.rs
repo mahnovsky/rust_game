@@ -26,7 +26,9 @@ fn main() {
 
     glfw.window_hint(WindowHint::ContextVersion(3, 3));
     glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
-    //glfwWindowHint(GLFW_RESIZABLE, GL_FALSE)
+    #[cfg(target_os = "macos")]
+    glfw.window_hint(WindowHint::OpenGlForwardCompat(true));
+    
     glfw.window_hint(WindowHint::Resizable(false));
 
     // Create a windowed mode window and its OpenGL context

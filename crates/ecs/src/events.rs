@@ -11,7 +11,7 @@ trait BaseStorage {
 }
 
 pub trait StoredFunc<Event> {
-    fn run(&mut self, input: &Event);
+    fn run(&self, input: Event);
 
     fn get_events(&mut self) -> Option<Vec<Event>> {
         None
@@ -20,8 +20,8 @@ pub trait StoredFunc<Event> {
     fn flush_events(&mut self) {}
 }
 
-impl<Event: 'static + Sized, Func: 'static + FnMut(&Event)> StoredFunc<Event> for Func {
-    fn run(&mut self, input: &Event) {
+impl<Event: 'static + Sized, Func: 'static + Fn(Event)> StoredFunc<Event> for Func {
+    fn run(&self, input: Event) {
         self(input);
     }
 }
@@ -30,7 +30,7 @@ struct Storage<E> {
     pub list: Vec<Box<dyn StoredFunc<E>>>,
 }
 
-impl<E: Sized + 'static> Storage<E> {
+impl<E: Sized + 'static + Copy> Storage<E> {
     fn new() -> Self {
         Self { list: Vec::new() }
     }
@@ -42,7 +42,7 @@ impl<E: Sized + 'static> Storage<E> {
     }
 }
 
-impl<E: Sized + 'static> BaseStorage for Storage<E> {
+impl<E: Sized + 'static + Copy> BaseStorage for Storage<E> {
     fn get_stored_type_id(&self) -> TypeId {
         TypeId::of::<E>()
     }
@@ -73,7 +73,7 @@ impl Events {
         }
     }
 
-    pub fn add_receiver<E: Sized + 'static, Func: StoredFunc<E> + 'static>(
+    pub fn add_receiver<E: Sized + 'static + Copy, Func: StoredFunc<E> + 'static>(
         &mut self,
         f: Func,
     ) -> Option<usize> {
@@ -91,12 +91,12 @@ impl Events {
         None
     }
 
-    pub fn push_event<E: Sized + 'static>(&mut self, event: &E) {
+    pub fn push_event<E: Sized + 'static + Copy>(& self, event: E) {
         let id = TypeId::of::<E>();
 
-        if let Some(stor) = self.storages.get_mut(&id) {
-            if let Some(stor) = stor.as_any_mut().downcast_mut::<Storage<E>>() {
-                for receiver in stor.list.iter_mut() {
+        if let Some(stor) = self.storages.get(&id) {
+            if let Some(stor) = stor.as_any().downcast_ref::<Storage<E>>() {
+                for receiver in stor.list.iter() {
                     receiver.run(event);
                 }
             }
@@ -121,26 +121,3 @@ impl Events {
     }
 }
 
-pub struct EventListener<E> {
-    events: Vec<E>,
-}
-
-impl<E: 'static + Sized + Clone> EventListener<E> {
-    pub fn new() -> Self {
-        Self { events: Vec::new() }
-    }
-}
-
-impl<E: 'static + Sized + Clone> StoredFunc<E> for EventListener<E> {
-    fn run(&mut self, input: &E) {
-        self.events.push(input.clone());
-    }
-
-    fn get_events(&mut self) -> Option<Vec<E>> {
-        Some(self.events.clone())
-    }
-
-    fn flush_events(&mut self) {
-        self.events.clear();
-    }
-}

@@ -12,7 +12,7 @@ mod events;
 
 pub use events::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum EcsEvent {
     EntityCreated(EntityId),
     EntityDestroyed(EntityId),
@@ -194,6 +194,7 @@ pub struct Ecs {
     entity_counter: Cell<usize>,
     components: Vec<Option<Box<dyn ComponentContainer>>>,
     entity_cache: RefCell<EntityCash>,
+    pub events: Events, 
 }
 
 impl Debug for Ecs {
@@ -208,6 +209,7 @@ impl Default for Ecs {
             entity_counter: Cell::new(0),
             components: Vec::new(),
             entity_cache: RefCell::new(EntityCash::new()),
+            events: Events::new(),
         }
     }
 }
@@ -224,6 +226,7 @@ impl Ecs {
             components: v,
             entity_counter: Cell::new(0),
             entity_cache: RefCell::new(EntityCash::new()),
+            events: Events::new(),
         }
     }
 
@@ -236,11 +239,17 @@ impl Ecs {
     fn add_entity(&self, entity: Rc<Entity>) -> EntityWeak {
         let mut cache = self.entity_cache.borrow_mut();
 
+        let e = EcsEvent::EntityCreated(entity.entity_id);
+        self.events.push_event(e);
+
         cache.add_entity(entity)
     }
 
     pub fn remove_entity(&self, entity_id: EntityId) {
         let mut cache = self.entity_cache.borrow_mut();
+
+        let e = EcsEvent::EntityCreated(entity_id);
+        self.events.push_event(e);
 
         cache.remove_entity(entity_id);
     }

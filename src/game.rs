@@ -130,7 +130,10 @@ pub struct Game {
     quad_tree: QuadTree,
 }
 
-fn test(x: &EcsEvent) {}
+fn test(x: EcsEvent) {
+
+    println!("Test {:?}", x);
+}
 
 impl Game {
     pub fn new(width: u32, height: u32) -> Self {
@@ -173,6 +176,11 @@ impl Game {
     }
 
     pub fn init(&mut self, render: &mut Render) {
+        
+        let mut ecs = self.world.deref().borrow_mut();
+        ecs.events.add_receiver(test);
+        drop(ecs);
+        
         self.players[0] = self.create_player(
             render,
             &[

@@ -281,6 +281,7 @@ impl QuadTree {
 
             if let Some(handle) = handle {
                 if self.is_collisions_exist(ecs, entity, &collider, &bounds) {
+
                     return false;
                 }
                 if let Some(old_handle) = collider.get_area_handle() {

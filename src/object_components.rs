@@ -70,10 +70,14 @@ impl Damagable {
     }
 
     pub fn do_damage(&mut self, damage: u32) {
-        if self.health > damage {
-            self.health -= damage;
-        } else {
-            self.health = 0;
+        if let Some(entity) = self.entity.upgrade() {
+            if self.health > damage {
+                self.health -= damage;
+            } else {
+                self.health = 0;
+
+                entity.kill();
+            }
         }
         println!("do damage for {}, dmg: {}", self.health, damage);
     }
