@@ -8,6 +8,7 @@ pub trait EventListener {
 trait AsAny {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn clear(&mut self);
 }
 
 struct EventStorage<E> {
@@ -31,6 +32,10 @@ impl<E: Sized + 'static + Clone> AsAny for EventStorage<E> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn clear(&mut self) {
+        self.events.clear();
     }
 }
 
@@ -82,6 +87,12 @@ impl EventSystem {
             for ev in storage.events.iter() {
                 listener.on_event(ev.clone());
             }
+        }
+    }
+
+    pub fn clear_all(&mut self) {
+        for (_, v) in &mut self.storages {
+            v.clear();
         }
     }
 }

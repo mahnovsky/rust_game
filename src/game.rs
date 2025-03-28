@@ -11,7 +11,8 @@ use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use std::vec::Vec;
-
+use std::cell::RefMut;
+use std::collections::HashMap;
 use crate::map::Map;
 use crate::object_components::{Bullet, Damagable, Lifetime, Movable};
 use crate::render::Drawable;
@@ -42,6 +43,22 @@ pub struct PlayerController {
     shoot_delay: f32,
 }
 
+impl Listener<PlayerAction> for PlayerController {
+    fn on_event(&mut self, player_input: PlayerAction) {
+        self.direction = match player_input {
+            PlayerAction::MoveLeft => make_vec2(&[-1., 0.]),
+            PlayerAction::MoveRight => make_vec2(&[1., 0.]),
+            PlayerAction::MoveTop => make_vec2(&[0., 1.]),
+            PlayerAction::MoveDown => make_vec2(&[0., -1.]),
+            PlayerAction::None | PlayerAction::Shoot => {
+                glm::vec2(self.direction.x, self.direction.y)
+            }
+        };
+
+        self.last_action = player_input;
+    }
+}
+
 impl PlayerController {
     fn new(entity: &EntityWeak, player_index: usize, dir: glm::Vec2) -> Self {
         Self {
@@ -58,19 +75,7 @@ impl PlayerController {
         /*if *player_input != PlayerAction::None {
             println!("{:?}", player_input);
         }*/
-        self.timer += dt;
-
-        self.direction = match player_input {
-            PlayerAction::MoveLeft => make_vec2(&[-1., 0.]),
-            PlayerAction::MoveRight => make_vec2(&[1., 0.]),
-            PlayerAction::MoveTop => make_vec2(&[0., 1.]),
-            PlayerAction::MoveDown => make_vec2(&[0., -1.]),
-            PlayerAction::None | PlayerAction::Shoot => {
-                glm::vec2(self.direction.x, self.direction.y)
-            }
-        };
-
-        self.last_action = player_input;
+        self.timer += dt;   
     }
 
     fn can_spawn_bullet(&self) -> bool {
@@ -83,6 +88,23 @@ impl PlayerController {
         let owner = self.entity.upgrade()?;
 
         Some(Bullet::new(ent, owner.get_id(), 2))
+    }
+}
+
+#[component_impl]
+#[derive(Debug, Clone)]
+pub struct InputLayoutComponent {
+    key_actions: HashMap<Key, PlayerAction>,
+}
+
+impl InputLayoutComponent {
+    fn do_input(&mut self, events: &RefCell<EventSystem>, event: &glfw::WindowEvent) {
+        if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
+            if let Some(item) = self.key_actions.get(in_key) {
+                let mut events = events.borrow_mut();
+                events.push_event(*item);
+            }
+        }
     }
 }
 
@@ -244,7 +266,7 @@ impl Game {
                             entity.add_component(|| Lifetime::new(&weak_ent, 2.));
 
                             let id = entity.get_id();
-                            println!("bulllet was spawned {:?}", id);
+                            println!("bullet was spawned {:?}", id);
                         }
                     }));
                 }
@@ -309,11 +331,13 @@ impl Game {
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {
-        for opt in &mut self.players {
-            if let Some(player) = opt.as_mut() {
-                player.do_input(event);
-            }
-        }
+
+
+        let ecs = self.world.borrow_mut();
+        ecs.visit_all::<InputLayoutComponent>(|input_component| {
+            input_component.do_input(&ecs.events, event);
+        });
+        
     }
 
     pub fn do_draw(&mut self, render: &mut Render) {
