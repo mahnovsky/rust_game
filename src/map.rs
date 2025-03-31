@@ -97,7 +97,7 @@ impl Map {
                                     }
                                 }
                             }
-                            objects.insert(entity.clone());
+                            //objects.insert(entity.clone());
                         }
                     }
                 }

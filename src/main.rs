@@ -12,7 +12,7 @@ mod quad_tree;
 mod render;
 mod sprite;
 mod transform;
-
+mod player_config;
 extern crate core;
 extern crate nalgebra_glm as glm;
 
@@ -22,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::game::Game;
 
 fn main() {
-    let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
+    let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
 
     glfw.window_hint(WindowHint::ContextVersion(3, 3));
     glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
@@ -49,12 +49,14 @@ fn main() {
 
     render.init();
 
-    let mut game = Game::new(w as u32, h as u32);
-
-    game.init(&mut render);
+    
     // Make the window's context current
     window.make_current();
     glfw.set_swap_interval(glfw::SwapInterval::None);
+
+    let mut game = Game::new(w as u32, h as u32);
+
+    game.init(&mut render);
 
     window.set_key_polling(true);
     render::load_projection_matrix(&render.get_shader("default").unwrap(), w as u32, h as u32);
@@ -68,7 +70,6 @@ fn main() {
 
         glfw.poll_events();
         for (_, event) in glfw::flush_messages(&events) {
-            //println!("{:?}", event);
             game.do_input(&event);
             if let glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) = event {
                 window.set_should_close(true)

@@ -255,13 +255,13 @@ impl Render {
     }
 
     pub fn load_texture(&self, file_name: &str) -> u32 {
-        {
-            let textures = self.textures.borrow();
-            if let Some(texture) = textures.get(file_name) {
-                return *texture;
-            }
+        
+        let textures = self.textures.borrow();
+        if let Some(texture) = textures.get(file_name) {
+            return *texture;
         }
-
+        drop(textures);
+        
         if let Ok(img) = ImageReader::open(file_name) {
             let img = img.decode().unwrap().flipv();
 

@@ -11,26 +11,22 @@ use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use std::vec::Vec;
-use std::cell::RefMut;
-use std::collections::HashMap;
+use fxhash::FxHashMap;
 use crate::map::Map;
 use crate::object_components::{Bullet, Damagable, Lifetime, Movable};
 use crate::render::Drawable;
 use crate::render::Render;
 use crate::sprite::Sprite;
 use crate::transform::Transform;
+use crate::player_config::{PlayerAction, Player};
 use ::ecs::*;
 //use ::ecs::
 use ecs_derive::component_impl;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum PlayerAction {
-    MoveLeft,
-    MoveRight,
-    MoveTop,
-    MoveDown,
-    Shoot,
-    None,
+enum PlayerState {
+    Idle,
+    Move
 }
 
 #[component_impl]
@@ -38,7 +34,7 @@ enum PlayerAction {
 pub struct PlayerController {
     direction: glm::Vec2,
     player_index: usize,
-    last_action: PlayerAction,
+    state: PlayerState,
     timer: f32,
     shoot_delay: f32,
 }
@@ -46,16 +42,23 @@ pub struct PlayerController {
 impl Listener<PlayerAction> for PlayerController {
     fn on_event(&mut self, player_input: PlayerAction) {
         self.direction = match player_input {
-            PlayerAction::MoveLeft => make_vec2(&[-1., 0.]),
-            PlayerAction::MoveRight => make_vec2(&[1., 0.]),
-            PlayerAction::MoveTop => make_vec2(&[0., 1.]),
-            PlayerAction::MoveDown => make_vec2(&[0., -1.]),
-            PlayerAction::None | PlayerAction::Shoot => {
-                glm::vec2(self.direction.x, self.direction.y)
-            }
+            PlayerAction::MoveLeft => glm::vec2(-1., 0.),
+            PlayerAction::MoveRight => glm::vec2(1., 0.),
+            PlayerAction::MoveTop => glm::vec2(0., 1.),
+            PlayerAction::MoveDown => glm::vec2(0., -1.),
+            PlayerAction::None | PlayerAction::Shoot => self.direction
         };
 
-        self.last_action = player_input;
+        self.state = match player_input {
+            PlayerAction::MoveLeft |
+            PlayerAction::MoveRight |
+            PlayerAction::MoveTop |
+            PlayerAction::MoveDown => PlayerState::Move,
+            PlayerAction::Shoot => self.state,
+            _ => PlayerState::Idle
+        };
+
+        //println!("Current state {:?}", self.state);
     }
 }
 
@@ -65,21 +68,14 @@ impl PlayerController {
             entity: entity.clone(),
             direction: glm::vec2(dir.x, dir.y),
             player_index,
-            last_action: PlayerAction::None,
+            state: PlayerState::Idle,
             timer: 0.,
             shoot_delay: 1.5,
         }
     }
 
-    fn update(&mut self, dt: f32, player_input: PlayerAction) {
-        /*if *player_input != PlayerAction::None {
-            println!("{:?}", player_input);
-        }*/
-        self.timer += dt;   
-    }
-
     fn can_spawn_bullet(&self) -> bool {
-        self.timer > self.shoot_delay && self.last_action == PlayerAction::Shoot
+        self.timer > self.shoot_delay
     }
 
     fn spawn_bullet(&mut self, ent: &Weak<Entity>) -> Option<Bullet> {
@@ -94,49 +90,25 @@ impl PlayerController {
 #[component_impl]
 #[derive(Debug, Clone)]
 pub struct InputLayoutComponent {
-    key_actions: HashMap<Key, PlayerAction>,
+    key_actions: FxHashMap<Key, PlayerAction>,
 }
 
 impl InputLayoutComponent {
+    pub fn new(entity: EntityWeak, actions: FxHashMap<Key, PlayerAction>) -> Self {
+        Self{ key_actions: actions, entity: entity }
+    }
+
     fn do_input(&mut self, events: &RefCell<EventSystem>, event: &glfw::WindowEvent) {
-        if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
+        if let glfw::WindowEvent::Key(in_key, _, action, _) = event {
             if let Some(item) = self.key_actions.get(in_key) {
-                let mut events = events.borrow_mut();
-                events.push_event(*item);
-            }
-        }
-    }
-}
-
-struct Player {
-    entity: EntityWeak,
-    action: PlayerAction,
-    input_layer: [(Key, PlayerAction); 5],
-}
-
-impl Player {
-    fn new(entity: &EntityWeak, keys: &[(Key, PlayerAction); 5]) -> Self {
-        Self {
-            entity: entity.clone(),
-            action: PlayerAction::None,
-            input_layer: *keys,
-        }
-    }
-
-    fn get_player_entity(&self) -> EntityWeak {
-        self.entity.clone()
-    }
-
-    fn do_input(&mut self, event: &glfw::WindowEvent) {
-        if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
-            if let Some(item) = self.input_layer.iter().find(|x| x.0 == *in_key) {
-                self.action = item.1;
-            }
-        } else if let glfw::WindowEvent::Key(in_key, _, Action::Release, _) = event {
-            let res = self.input_layer.iter().find(|x| x.0 == *in_key);
-
-            if res.is_some() {
-                self.action = PlayerAction::None;
+                if let Some(entity) = self.entity.upgrade() {
+                    if *action == Action::Press || *action == Action::Repeat {
+                        entity.push_event(*item);
+                    }
+                    else {
+                        entity.push_event(PlayerAction::None);
+                    }
+                }
             }
         }
     }
@@ -152,14 +124,10 @@ pub struct Game {
     quad_tree: QuadTree,
 }
 
-fn test(x: EcsEvent) {
-    println!("Test {:?}", x);
-}
-
 impl Game {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
-            rnd: rand::thread_rng(),
+            rnd: rand::rng(),
             world: Rc::new(RefCell::new(Ecs::new())),
             players: [None, None],
             map: Map::new(width, height),
@@ -172,7 +140,7 @@ impl Game {
     fn create_player(
         &mut self,
         render: &mut Render,
-        layer: &[(Key, PlayerAction); 5],
+        config: &str,
         index: usize,
     ) -> Option<Player> {
         let entity_weak = Entity::new(&self.world);
@@ -193,31 +161,19 @@ impl Game {
 
         self.quad_tree.place(&entity);
 
-        Some(Player::new(&entity_weak, layer))
+        Some(Player::new(&entity_weak, config))
     }
 
     pub fn init(&mut self, render: &mut Render) {
         self.players[0] = self.create_player(
             render,
-            &[
-                (Key::A, PlayerAction::MoveLeft),
-                (Key::D, PlayerAction::MoveRight),
-                (Key::W, PlayerAction::MoveTop),
-                (Key::S, PlayerAction::MoveDown),
-                (Key::LeftControl, PlayerAction::Shoot),
-            ],
+            "player1.yaml",
             0,
         );
 
         self.players[1] = self.create_player(
             render,
-            &[
-                (Key::Left, PlayerAction::MoveLeft),
-                (Key::Right, PlayerAction::MoveRight),
-                (Key::Up, PlayerAction::MoveTop),
-                (Key::Down, PlayerAction::MoveDown),
-                (Key::RightControl, PlayerAction::Shoot),
-            ],
+            "player2.yaml",
             1,
         );
     }
@@ -227,12 +183,8 @@ impl Game {
 
         ecs.visit_all3::<Transform, PlayerController, Movable>(|transform, controller, movable| {
             if let Some(player) = &self.players[controller.player_index] {
-                controller.update(dt, player.action);
-
-                movable.set_dirty(
-                    controller.last_action != PlayerAction::None
-                        && controller.last_action != PlayerAction::Shoot,
-                );
+                
+                movable.set_dirty(controller.state == PlayerState::Move);
 
                 let direction = controller.direction;
 
@@ -294,7 +246,7 @@ impl Game {
                     if self.quad_tree.move_object(&ecs, &entity, new_pos) {
                         transform.set_position(&new_pos);
                     } else {
-                        println!("Cant move help!!!");
+                        println!("Cant move help!!! {:?}", new_pos);
                     }
                 }
 
@@ -323,6 +275,7 @@ impl Game {
     pub fn update(&mut self, dt: f32) {
         //self.map.update(&self.world);
         self.update_input(dt);
+        self.process_events();
         self.spawn_bullets();
         self.bullet_system_update(dt);
         self.move_system_update(dt);
@@ -330,14 +283,19 @@ impl Game {
         self.frame_counter += 1;
     }
 
+    pub fn process_events(&self) {
+        let ecs = self.world.borrow();
+         ecs.process_events::<PlayerAction, PlayerController>();
+         //ecs.process_events::<PlayerAction, Movable>();
+
+         ecs.clean_events::<PlayerAction>();
+    }
+
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {
-
-
         let ecs = self.world.borrow_mut();
         ecs.visit_all::<InputLayoutComponent>(|input_component| {
             input_component.do_input(&ecs.events, event);
         });
-        
     }
 
     pub fn do_draw(&mut self, render: &mut Render) {

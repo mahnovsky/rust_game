@@ -90,6 +90,13 @@ impl EventSystem {
         }
     }
 
+    pub fn clear<E: 'static + Sized + Clone>(&mut self) {
+        let id = TypeId::of::<E>();
+        if let Some(storage) = self.storages.get_mut(&id) {
+            storage.clear();
+        }
+    }
+
     pub fn clear_all(&mut self) {
         for (_, v) in &mut self.storages {
             v.clear();

@@ -1,0 +1,11 @@
+key_actions:
+ - action: MoveLeft
+   key: Left
+ - action: MoveRight
+   key: Right
+ - action: MoveTop
+   key: Up
+ - action: MoveDown
+   key: Down
+ - action: Shoot
+   key: RightControl

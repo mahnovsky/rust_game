@@ -25,36 +25,33 @@ pub trait Component {
 }
 
 trait ComponentContainer {
-    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn as_any(&self) -> &dyn Any;
-    fn reset(&self, id: usize);
 }
 
 type ComponentContainerVec<T> = Rc<RefCell<Vec<Option<T>>>>;
 
 impl<T: 'static + Component> ComponentContainer for ComponentContainerVec<T> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+    
 
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn reset(&self, id: usize) {
-        let mut s = self.deref().borrow_mut();
+    // fn reset(&self, id: usize) {
+    //     let mut s = self.deref().borrow_mut();
 
-        s[id] = None;
-    }
+    //     s[id] = None;
+    // }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
 pub struct EntityId(usize);
 
-#[derive(Clone, Debug)]
+//#[derive(Debug)]
 pub struct Entity {
     weak_ecs: EcsWeak,
     entity_id: EntityId,
+    events: RefCell<EventSystem>,
 }
 
 impl PartialEq for Entity {
@@ -82,6 +79,7 @@ impl Entity {
         let res = Rc::new(Self {
             weak_ecs: Rc::downgrade(ecs),
             entity_id: id,
+            events: RefCell::new(EventSystem::new()),
         });
 
         let ecs = ecs.deref().borrow();
@@ -111,7 +109,7 @@ impl Entity {
 
     pub fn visit<T: 'static + Component>(&self, f: impl FnOnce(&mut Option<T>)) {
         if let Some(ecs) = self.weak_ecs.upgrade() {
-            let ecs = ecs.deref().borrow_mut();
+            let ecs = ecs.deref().borrow();
 
             ecs.visit(self, f);
         }
@@ -131,6 +129,27 @@ impl Entity {
 
         None
     }
+
+    pub fn push_event<E: Sized + Clone + 'static>(&self, event: E) {
+        let mut events = self.events.borrow_mut();
+
+        events.push_event(event);
+    }
+
+    pub fn process_event<E: Sized + Clone + 'static, T: 'static + Component + Listener<E>>(&self) {
+        let events = self.events.borrow_mut();
+        self.visit::<T>(|component|{
+            if let Some(component) = component {
+                events.process_event(component);
+            }
+        });
+    }
+
+    pub fn clean_events<E: Sized + Clone + 'static>(&self) {
+        let mut events = self.events.borrow_mut();
+
+        events.clear::<E>();
+    } 
 }
 
 struct EntityCash {
@@ -255,6 +274,33 @@ impl Ecs {
 
         cache.remove_entity(entity_id);
     }
+
+    pub fn process_events<E: Sized + Clone + 'static, T: 'static + Component + Listener<E>>(&self) {
+        let cache = self.entity_cache.borrow();
+        for entity in cache.entities.iter() {
+            if let Some(entity) = entity { 
+                entity.process_event::<E, T>();
+            }
+        }
+    }
+
+    pub fn process_events_all<E: Sized + Clone + 'static>(&self) {
+        let cache = self.entity_cache.borrow();
+        for id in 0..cache.entities.len() {
+            if cache.is_entity_alive(EntityId(id)) {
+                
+            }
+        }
+    }
+
+    pub fn clean_events<E: Sized + Clone + 'static>(&self) {
+        let cache = self.entity_cache.borrow();
+        for entity in cache.entities.iter() {
+            if let Some(entity) = entity { 
+                entity.clean_events::<E>();
+            }
+        }
+    } 
 
     pub fn add_component<T>(&mut self, entity: &Entity, creator: impl FnOnce() -> T)
     where

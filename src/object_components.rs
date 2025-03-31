@@ -1,6 +1,8 @@
 use ::ecs::*;
 use ecs_derive::component_impl;
 
+use crate::player_config::PlayerAction;
+
 #[component_impl]
 #[derive(Debug, Clone)]
 pub struct Movable {
@@ -29,6 +31,19 @@ impl Movable {
         self.dirty
     }
 }
+
+// impl Listener<PlayerAction> for Movable {
+//     fn on_event(&mut self, event: PlayerAction) {
+//         println!("Movable action event receive");
+//         self.dirty = match event {
+//             PlayerAction::MoveDown | 
+//             PlayerAction::MoveTop |
+//             PlayerAction::MoveLeft |
+//             PlayerAction::MoveRight => true,
+//             _ => false
+//         }
+//     }
+// }
 
 #[component_impl]
 #[derive(Debug, Clone)]
