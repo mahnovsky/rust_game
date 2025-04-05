@@ -3,9 +3,9 @@
 
 use crate::bounds::Bounds;
 use crate::collider2d::Collider2d;
+use crate::fire_system::{self, FireSystem};
 use crate::quad_tree::QuadTree;
 use glfw::{Action, Key};
-use glm::make_vec2;
 use rand::rngs::ThreadRng;
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -13,79 +13,14 @@ use std::rc::{Rc, Weak};
 use std::vec::Vec;
 use fxhash::FxHashMap;
 use crate::map::Map;
-use crate::object_components::{Bullet, Damagable, Lifetime, Movable};
+use crate::object_components::{Bullet, Damagable, Gun, Lifetime, Movable};
 use crate::render::Drawable;
 use crate::render::Render;
 use crate::sprite::Sprite;
 use crate::transform::Transform;
-use crate::player_config::{PlayerAction, Player};
+use crate::player_config::{Player, PlayerAction, PlayerController, PlayerState};
 use ::ecs::*;
-//use ::ecs::
 use ecs_derive::component_impl;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum PlayerState {
-    Idle,
-    Move
-}
-
-#[component_impl]
-#[derive(Debug, Clone)]
-pub struct PlayerController {
-    direction: glm::Vec2,
-    player_index: usize,
-    state: PlayerState,
-    timer: f32,
-    shoot_delay: f32,
-}
-
-impl Listener<PlayerAction> for PlayerController {
-    fn on_event(&mut self, player_input: PlayerAction) {
-        self.direction = match player_input {
-            PlayerAction::MoveLeft => glm::vec2(-1., 0.),
-            PlayerAction::MoveRight => glm::vec2(1., 0.),
-            PlayerAction::MoveTop => glm::vec2(0., 1.),
-            PlayerAction::MoveDown => glm::vec2(0., -1.),
-            PlayerAction::None | PlayerAction::Shoot => self.direction
-        };
-
-        self.state = match player_input {
-            PlayerAction::MoveLeft |
-            PlayerAction::MoveRight |
-            PlayerAction::MoveTop |
-            PlayerAction::MoveDown => PlayerState::Move,
-            PlayerAction::Shoot => self.state,
-            _ => PlayerState::Idle
-        };
-
-        //println!("Current state {:?}", self.state);
-    }
-}
-
-impl PlayerController {
-    fn new(entity: &EntityWeak, player_index: usize, dir: glm::Vec2) -> Self {
-        Self {
-            entity: entity.clone(),
-            direction: glm::vec2(dir.x, dir.y),
-            player_index,
-            state: PlayerState::Idle,
-            timer: 0.,
-            shoot_delay: 1.5,
-        }
-    }
-
-    fn can_spawn_bullet(&self) -> bool {
-        self.timer > self.shoot_delay
-    }
-
-    fn spawn_bullet(&mut self, ent: &Weak<Entity>) -> Option<Bullet> {
-        self.timer = 0_f32;
-
-        let owner = self.entity.upgrade()?;
-
-        Some(Bullet::new(ent, owner.get_id(), 2))
-    }
-}
 
 #[component_impl]
 #[derive(Debug, Clone)]
@@ -98,7 +33,7 @@ impl InputLayoutComponent {
         Self{ key_actions: actions, entity: entity }
     }
 
-    fn do_input(&mut self, events: &RefCell<EventSystem>, event: &glfw::WindowEvent) {
+    fn do_input(&mut self, event: &glfw::WindowEvent) {
         if let glfw::WindowEvent::Key(in_key, _, action, _) = event {
             if let Some(item) = self.key_actions.get(in_key) {
                 if let Some(entity) = self.entity.upgrade() {
@@ -122,6 +57,7 @@ pub struct Game {
     bullets: RefCell<Vec<Box<dyn FnOnce()>>>,
     frame_counter: u32,
     quad_tree: QuadTree,
+    fire_system: FireSystem,
 }
 
 impl Game {
@@ -134,6 +70,7 @@ impl Game {
             bullets: RefCell::new(Vec::new()),
             frame_counter: 0,
             quad_tree: QuadTree::new(Bounds::new(0_f32, 0_f32, width as f32, height as f32)),
+            fire_system: FireSystem::new(),
         }
     }
 
@@ -141,27 +78,10 @@ impl Game {
         &mut self,
         render: &mut Render,
         config: &str,
-        index: usize,
+        index: u32,
     ) -> Option<Player> {
-        let entity_weak = Entity::new(&self.world);
-        let entity = entity_weak.upgrade()?;
-        let dir = make_vec2(&[0_f32, 1_f32]);
-        let pos = make_vec2(&[50. + (100 * index) as f32, 100.]);
-        let size = 50_f32;
-        let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
-
-        entity.add_component(|| Sprite::new(&entity_weak, size, size, "tank.png"));
-        entity.add_component(|| Transform::with_direction(&entity_weak, pos, dir));
-        entity.add_component(|| Collider2d::new(&entity_weak, bounds));
-        entity.add_component(|| Movable::new(&entity_weak, 100.));
-        entity.add_component(|| Damagable::new(&entity_weak, 10));
-        entity.add_component(|| PlayerController::new(&entity_weak, index, dir));
-
-        entity.visit(|sprite: &mut Option<Sprite>| sprite.as_mut().unwrap().init(render));
-
-        self.quad_tree.place(&entity);
-
-        Some(Player::new(&entity_weak, config))
+        
+        Player::new(&self.world, index, config, &self.quad_tree, &render)
     }
 
     pub fn init(&mut self, render: &mut Render) {
@@ -182,7 +102,7 @@ impl Game {
         let ecs = self.world.deref().borrow();
 
         ecs.visit_all3::<Transform, PlayerController, Movable>(|transform, controller, movable| {
-            if let Some(player) = &self.players[controller.player_index] {
+            if let Some(player) = &self.players[controller.player_index as usize] {
                 
                 movable.set_dirty(controller.state == PlayerState::Move);
 
@@ -278,6 +198,7 @@ impl Game {
         self.process_events();
         self.spawn_bullets();
         self.bullet_system_update(dt);
+        self.fire_system.update(&self.world, dt); 
         self.move_system_update(dt);
 
         self.frame_counter += 1;
@@ -287,14 +208,14 @@ impl Game {
         let ecs = self.world.borrow();
          ecs.process_events::<PlayerAction, PlayerController>();
          //ecs.process_events::<PlayerAction, Movable>();
-
+         ecs.process_events::<PlayerAction, Gun>();
          ecs.clean_events::<PlayerAction>();
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {
         let ecs = self.world.borrow_mut();
         ecs.visit_all::<InputLayoutComponent>(|input_component| {
-            input_component.do_input(&ecs.events, event);
+            input_component.do_input(event);
         });
     }
 

@@ -91,7 +91,7 @@ impl Transform {
     }
 
     pub fn get_direction(&self) -> glm::Vec2 {
-        vec2(self.direction.x, self.direction.y)
+        self.direction
     }
 
     pub fn apply_transform_changes(&mut self) {

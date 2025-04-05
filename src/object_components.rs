@@ -1,7 +1,8 @@
 use ::ecs::*;
 use ecs_derive::component_impl;
+use glfw::ffi::GLFWcharfun;
 
-use crate::player_config::PlayerAction;
+use crate::{player_config::PlayerAction, transform::Transform};
 
 #[component_impl]
 #[derive(Debug, Clone)]
@@ -32,18 +33,77 @@ impl Movable {
     }
 }
 
-// impl Listener<PlayerAction> for Movable {
-//     fn on_event(&mut self, event: PlayerAction) {
-//         println!("Movable action event receive");
-//         self.dirty = match event {
-//             PlayerAction::MoveDown | 
-//             PlayerAction::MoveTop |
-//             PlayerAction::MoveLeft |
-//             PlayerAction::MoveRight => true,
-//             _ => false
-//         }
-//     }
-// }
+#[derive(Debug, Clone)]
+pub struct BulletSpawner {
+    pub owner_id: EntityId,
+    damage: u32,
+    pub pos: glm::Vec2,
+    pub dir: glm::Vec2,
+}
+
+impl BulletSpawner {
+    fn new(owner_id: EntityId, damage: u32, pos: glm::Vec2, dir: glm::Vec2) -> Self {
+        Self { owner_id, damage, pos, dir }
+    }
+
+    pub fn spawn_bullet(&self, ent: &EntityWeak) -> Bullet {
+        Bullet::new(ent, self.owner_id, self.damage)
+    }
+}
+
+#[component_impl]
+#[derive(Debug, Clone)]
+pub struct Gun {
+    damage: u32,
+    timer: f32,
+    shoot_delay: f32,
+    spawner: Option<BulletSpawner>
+}
+
+impl Gun {
+    pub fn new(entity: &EntityWeak, damage: u32) -> Self {
+        Self {
+            entity: entity.clone(),
+            damage,
+            timer: 0_f32,
+            shoot_delay: 2_f32,
+            spawner: None
+        }
+    }
+
+    pub fn get_damage(&self) -> u32 {
+        self.damage
+    }
+
+    pub fn can_spawn_bullet(&self) -> bool {
+        self.timer > self.shoot_delay
+    }
+
+    pub fn update_timer(&mut self, delta: f32) {
+        if self.timer < self.shoot_delay {
+            self.timer += delta;
+        }
+    }
+
+    pub fn consume_spawner(&mut self) -> Option<BulletSpawner> {
+        if self.spawner.is_some() {
+            self.timer = 0.;
+        }
+        self.spawner.take()
+    } 
+}
+
+impl Listener<PlayerAction> for Gun {
+    fn on_event(&mut self, event: PlayerAction) {
+        println!("Gun action event receive");
+        if event == PlayerAction::Shoot && self.can_spawn_bullet() {
+            let id = self.get_entity_id().unwrap();
+            let ent = self.entity.upgrade().unwrap();
+            let tr = ent.get_component_clone::<Transform>().unwrap();
+            self.spawner = Some(BulletSpawner::new(id, self.damage, tr.get_position(), tr.get_direction()))
+        }
+    }
+}
 
 #[component_impl]
 #[derive(Debug, Clone)]

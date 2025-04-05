@@ -234,13 +234,6 @@ impl Render {
         }
     }
 
-    pub fn init(&self) {
-        unsafe {
-            gl::Enable(gl::BLEND);
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-        }
-    }
-
     pub fn get_shader(&self, name: &str) -> Option<Rc<ShaderProgram>> {
         let mut shader_cache = self.shader_cache.borrow_mut();
         if shader_cache.is_program_exist(name) {

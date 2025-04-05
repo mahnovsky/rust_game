@@ -13,6 +13,7 @@ mod render;
 mod sprite;
 mod transform;
 mod player_config;
+mod fire_system;
 extern crate core;
 extern crate nalgebra_glm as glm;
 
@@ -28,7 +29,6 @@ fn main() {
     glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
     #[cfg(target_os = "macos")]
     glfw.window_hint(WindowHint::OpenGlForwardCompat(true));
-    
     glfw.window_hint(WindowHint::Resizable(false));
 
     // Create a windowed mode window and its OpenGL context
@@ -36,30 +36,29 @@ fn main() {
         .create_window(1024, 768, "Battle tanks", glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
 
+    // Make the window's context current
+    window.make_current();
+    window.set_key_polling(true);
+    
     gl::load_with(|s| window.get_proc_address(s) as *const _);
     gl::Viewport::load_with(|s| window.get_proc_address(s) as *const _);
 
+    let mut render = render::Render::new();
     let (w, h) = window.get_size();
     unsafe {
-        gl::Viewport(0, 0, w, h);
+        //gl::Viewport(0, 0, w, h);
         gl::ClearColor(0.3, 0.3, 0.3, 1.);
+        gl::Enable(gl::BLEND);
+        gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
     }
 
-    let mut render = render::Render::new();
-
-    render.init();
-
-    
-    // Make the window's context current
-    window.make_current();
     glfw.set_swap_interval(glfw::SwapInterval::None);
 
+    render::load_projection_matrix(&render.get_shader("default").unwrap(), w as u32, h as u32);
     let mut game = Game::new(w as u32, h as u32);
 
-    game.init(&mut render);
-
-    window.set_key_polling(true);
-    render::load_projection_matrix(&render.get_shader("default").unwrap(), w as u32, h as u32);
+    game.init(&mut render);   
+    
     let mut fps: u32 = 0;
     let mut timer: f64 = 0.;
     let mut delta: f64 = 0.;

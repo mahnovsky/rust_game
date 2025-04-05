@@ -8,4 +8,4 @@ key_actions:
  - action: MoveDown
    key: Down
  - action: Shoot
-   key: RightControl
+   key: RightAlt

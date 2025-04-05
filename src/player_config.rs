@@ -5,8 +5,82 @@ use glfw::{Key, Action};
 use yaml_rust2::{Yaml, YamlLoader};
 use std::str::FromStr;
 use strum_macros::EnumString;
-
+use ::ecs::*;
+use ecs_derive::component_impl;
+use crate::bounds::Bounds;
+use crate::collider2d::Collider2d;
+use crate::quad_tree::QuadTree;
+use crate::object_components::{Bullet, Damagable, Gun, Lifetime, Movable};
+use crate::render::Render;
+use crate::sprite::Sprite;
+use crate::transform::Transform;
 use crate::game::InputLayoutComponent;
+
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlayerState {
+    Idle,
+    Move
+}
+
+#[component_impl]
+#[derive(Debug, Clone)]
+pub struct PlayerController {
+    pub direction: glm::Vec2,
+    pub player_index: u32,
+    pub state: PlayerState,
+    timer: f32,
+    shoot_delay: f32,
+}
+
+impl Listener<PlayerAction> for PlayerController {
+    fn on_event(&mut self, player_input: PlayerAction) {
+        self.direction = match player_input {
+            PlayerAction::MoveLeft => glm::vec2(-1., 0.),
+            PlayerAction::MoveRight => glm::vec2(1., 0.),
+            PlayerAction::MoveTop => glm::vec2(0., 1.),
+            PlayerAction::MoveDown => glm::vec2(0., -1.),
+            PlayerAction::None | PlayerAction::Shoot => self.direction
+        };
+
+        self.state = match player_input {
+            PlayerAction::MoveLeft |
+            PlayerAction::MoveRight |
+            PlayerAction::MoveTop |
+            PlayerAction::MoveDown => PlayerState::Move,
+            PlayerAction::Shoot => self.state,
+            _ => PlayerState::Idle
+        };
+
+        //println!("Current state {:?}", self.state);
+    }
+}
+
+impl PlayerController {
+    fn new(entity: &EntityWeak, player_index: u32, dir: glm::Vec2) -> Self {
+        Self {
+            entity: entity.clone(),
+            direction: glm::vec2(dir.x, dir.y),
+            player_index,
+            state: PlayerState::Idle,
+            timer: 0.,
+            shoot_delay: 1.5,
+        }
+    }
+
+    pub fn can_spawn_bullet(&self) -> bool {
+        self.timer > self.shoot_delay
+    }
+
+    pub fn spawn_bullet(&mut self, ent: &EntityWeak) -> Option<Bullet> {
+        self.timer = 0_f32;
+
+        let owner = self.entity.upgrade()?;
+
+        Some(Bullet::new(ent, owner.get_id(), 2))
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, EnumString)]
 pub enum PlayerAction {
@@ -34,8 +108,9 @@ fn map_key(key: &Yaml) -> Option<Key> {
         "Right" => Some(Key::Right),
         "Up" => Some(Key::Up),
         "Down" => Some(Key::Down),
-        "LeftCtrl" => Some(Key::LeftControl),
-        "RightCtrl" => Some(Key::RightControl),
+        "LeftControl" => Some(Key::LeftControl),
+        "RightControl" => Some(Key::RightControl),
+        "RightAlt" => Some(Key::RightAlt),
     
         _ => None,
     }
@@ -97,17 +172,34 @@ pub struct Player {
 }
 
 impl Player {
-   pub fn new(entity: &EntityWeak, config: &str) -> Self {
+   pub fn new(ecs: &EcsRc, index: u32, config: &str, quad_tree: &QuadTree, render: &Render) -> Option<Self> {
         let config = PlayerConfig::new(config).unwrap();
-        let input = config.get_input_component(entity.clone());
-        if let Some(ent) = entity.upgrade() {
-            ent.add_component(|| input);
-        } 
+        let entity_weak = Entity::new(ecs);
+        let entity = entity_weak.upgrade()?;
+        let dir = glm::vec2(0_f32, 1_f32);
+        let pos = glm::vec2(50. + (100 * index) as f32, 100.);
+        let size = 50_f32;
+
+        let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
+
+        entity.add_component(|| Sprite::new(&entity_weak, size, size, "tank.png"));
+        entity.add_component(|| Transform::with_direction(&entity_weak, pos, dir));
+        entity.add_component(|| Collider2d::new(&entity_weak, bounds));
+        entity.add_component(|| Movable::new(&entity_weak, 200.));
+        entity.add_component(|| Damagable::new(&entity_weak, 10));
+        entity.add_component(|| PlayerController::new(&entity_weak, index, dir));
+        entity.add_component(|| Gun::new(&entity_weak, 2));
+
+        entity.visit(|sprite: &mut Option<Sprite>| sprite.as_mut().unwrap().init(render));
+        
+        let input = config.get_input_component(entity_weak.clone());
+        entity.add_component(|| input);
+        quad_tree.place(&entity);
         Self {
-            entity: entity.clone(),
+            entity: entity_weak.clone(),
             action: PlayerAction::None,
             config,
-        }
+        }.into()
     }
 
     fn get_player_entity(&self) -> EntityWeak {
