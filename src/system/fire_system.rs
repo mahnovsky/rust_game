@@ -1,6 +1,12 @@
 use std::cell::RefCell;
 
-use crate::{bounds::Bounds, collider2d::Collider2d, object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable}, sprite::Sprite, transform::Transform};
+use crate::{
+    bounds::Bounds, 
+    collider2d::Collider2d, 
+    object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable}, 
+    sprite::Sprite, transform::Transform,
+    system::system_trait::System
+};
 use ecs::*;
 
 pub struct FireSystem {
@@ -12,7 +18,7 @@ impl FireSystem {
         Self { spawners: RefCell::new(Vec::new()) }
     }
 
-    pub fn update(&mut self, world: &EcsRc, delta: f32) {
+    fn update_guns(&self, world: &EcsRc, delta: f32) {
         let ecs = world.borrow();
         
         ecs.visit_all::<Gun>(|gun|{
@@ -26,9 +32,11 @@ impl FireSystem {
                 spawners.push(spawner);
             }
         });
-        drop(ecs);
+    }
+
+    fn spawn_bullets(&self, world: &EcsRc) {
         let mut spawners = self.spawners.borrow_mut();
-        for spawner in spawners.iter() {
+        while let Some(spawner) = spawners.pop() {
             let direction = glm::vec2(0., 0.);//tr_owner.get_direction();
             let weak_bullet = Entity::new(world);
             let bullet = weak_bullet.upgrade().unwrap();
@@ -38,7 +46,7 @@ impl FireSystem {
             bullet.add_component(|| {
                 Transform::with_direction(&weak_bullet, pos, spawner.dir)
             });
-            bullet.add_component(|| Movable::new(&weak_bullet, 200.));
+            bullet.add_component(|| Movable::new(&weak_bullet, 300.));
             bullet.add_component(|| {
                 Collider2d::with_ignore(
                     &weak_bullet,
@@ -48,8 +56,41 @@ impl FireSystem {
             });
             bullet.add_component(|| Sprite::new(&weak_bullet, 10., 10., "tank1.png"));
             bullet.add_component(|| Damagable::new(&weak_bullet, 1));
-            bullet.add_component(|| Lifetime::new(&weak_bullet, 2.));
+            bullet.add_component(|| Lifetime::new(&weak_bullet, 5.));
         }
-        spawners.clear();
+    }
+
+    fn apply_damage(&self, world: &EcsRc) {
+        let ecs = world.borrow();
+        static mut DAMAGE_TARGETS : Vec<(u32, EntityId)> = Vec::new();
+        ecs.visit_all::<Bullet>(|bullet|{
+            
+            if let Some(target) = bullet.consume_target() {
+                unsafe { DAMAGE_TARGETS.push((bullet.get_damage(), target)) };
+                bullet.entity.upgrade().unwrap().kill();
+            }
+        });
+
+        unsafe {
+            while let Some(info) = DAMAGE_TARGETS.pop() {
+                ecs.visit::<Damagable>(info.1, |damagable| {
+                    if let Some(damagable) = damagable {
+                        damagable.do_damage(info.0);
+                    }
+                });
+            }
+        }
+    }
+}
+
+
+impl System for FireSystem {
+    fn update(&mut self, world: &EcsRc, delta: f32) {
+        
+        self.update_guns(world, delta);
+        
+        self.spawn_bullets(world);
+
+        self.apply_damage(world);
     }
 }

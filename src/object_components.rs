@@ -2,7 +2,7 @@ use ::ecs::*;
 use ecs_derive::component_impl;
 use glfw::ffi::GLFWcharfun;
 
-use crate::{player_config::PlayerAction, transform::Transform};
+use crate::{collider2d::CollisionEvent, player_config::PlayerAction, transform::Transform};
 
 #[component_impl]
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ impl Gun {
             entity: entity.clone(),
             damage,
             timer: 0_f32,
-            shoot_delay: 2_f32,
+            shoot_delay: 0.3_f32,
             spawner: None
         }
     }
@@ -105,19 +105,25 @@ impl Listener<PlayerAction> for Gun {
     }
 }
 
+pub enum BulletEvent {
+    OnHit(u32)
+}
+
 #[component_impl]
 #[derive(Debug, Clone)]
 pub struct Bullet {
     damage: u32,
     owner: EntityId,
+    target: Option<EntityId>,
 }
 
 impl Bullet {
     pub fn new(entity: &EntityWeak, owner: EntityId, damage: u32) -> Self {
         Self {
             entity: entity.clone(),
-            damage,
+            damage: damage.into(),
             owner,
+            target: None
         }
     }
 
@@ -127,6 +133,20 @@ impl Bullet {
 
     pub fn get_owner(&self) -> EntityId {
         self.owner
+    }
+
+    pub fn consume_target(&mut self) -> Option<EntityId> {
+        self.target.take()
+    }
+}
+
+impl Listener<CollisionEvent> for Bullet {
+    fn on_event(&mut self, event: CollisionEvent) {
+        use CollisionEvent::OnEntity;
+        if let OnEntity(ent_id) = event {
+            //println!("Booomm**** {:?}", ent_id);
+            self.target = ent_id.into();
+        }
     }
 }
 

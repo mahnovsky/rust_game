@@ -13,7 +13,7 @@ mod render;
 mod sprite;
 mod transform;
 mod player_config;
-mod fire_system;
+mod system;
 extern crate core;
 extern crate nalgebra_glm as glm;
 

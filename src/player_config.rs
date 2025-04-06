@@ -1,3 +1,4 @@
+use std::cell::RefMut;
 use std::{collections::HashMap, fs};
 use fxhash::FxHashMap;
 use ecs::EntityWeak;
@@ -29,8 +30,6 @@ pub struct PlayerController {
     pub direction: glm::Vec2,
     pub player_index: u32,
     pub state: PlayerState,
-    timer: f32,
-    shoot_delay: f32,
 }
 
 impl Listener<PlayerAction> for PlayerController {
@@ -63,21 +62,7 @@ impl PlayerController {
             direction: glm::vec2(dir.x, dir.y),
             player_index,
             state: PlayerState::Idle,
-            timer: 0.,
-            shoot_delay: 1.5,
         }
-    }
-
-    pub fn can_spawn_bullet(&self) -> bool {
-        self.timer > self.shoot_delay
-    }
-
-    pub fn spawn_bullet(&mut self, ent: &EntityWeak) -> Option<Bullet> {
-        self.timer = 0_f32;
-
-        let owner = self.entity.upgrade()?;
-
-        Some(Bullet::new(ent, owner.get_id(), 2))
     }
 }
 
@@ -167,17 +152,17 @@ impl PlayerConfig {
 
 pub struct Player {
     entity: EntityWeak,
-    pub action: PlayerAction,
+    //pub action: PlayerAction,
     config: PlayerConfig,
 }
 
 impl Player {
-   pub fn new(ecs: &EcsRc, index: u32, config: &str, quad_tree: &QuadTree, render: &Render) -> Option<Self> {
+   pub fn new(ecs: &EcsRc, index: u32, config: &str, quad_tree: RefMut<'_, QuadTree>, render: &Render) -> Option<Self> {
         let config = PlayerConfig::new(config).unwrap();
         let entity_weak = Entity::new(ecs);
         let entity = entity_weak.upgrade()?;
         let dir = glm::vec2(0_f32, 1_f32);
-        let pos = glm::vec2(50. + (100 * index) as f32, 100.);
+        let pos = glm::vec2(50. + (900 * index) as f32, 100.);
         let size = 50_f32;
 
         let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
@@ -194,10 +179,10 @@ impl Player {
         
         let input = config.get_input_component(entity_weak.clone());
         entity.add_component(|| input);
-        quad_tree.place(&entity);
+        quad_tree.place( ecs.borrow(), &entity);
         Self {
             entity: entity_weak.clone(),
-            action: PlayerAction::None,
+            //action: PlayerAction::None,
             config,
         }.into()
     }

@@ -2,9 +2,12 @@
 #![allow(unused_variables)]
 
 use crate::bounds::Bounds;
-use crate::collider2d::Collider2d;
-use crate::fire_system::{self, FireSystem};
+use crate::collider2d::{Collider2d, CollisionEvent};
+use crate::system::ai_system::AiSystem;
+use crate::system::fire_system::FireSystem;
 use crate::quad_tree::QuadTree;
+use crate::system::move_system::MoveSystem;
+use crate::system::system_trait::System;
 use glfw::{Action, Key};
 use rand::rngs::ThreadRng;
 use std::cell::RefCell;
@@ -56,8 +59,9 @@ pub struct Game {
     map: Map,
     bullets: RefCell<Vec<Box<dyn FnOnce()>>>,
     frame_counter: u32,
-    quad_tree: QuadTree,
-    fire_system: FireSystem,
+    quad_tree: Rc<RefCell<QuadTree>>,
+    // fire_system: FireSystem,
+    systems: Vec<Box<dyn System>>,
 }
 
 impl Game {
@@ -69,8 +73,8 @@ impl Game {
             map: Map::new(width, height),
             bullets: RefCell::new(Vec::new()),
             frame_counter: 0,
-            quad_tree: QuadTree::new(Bounds::new(0_f32, 0_f32, width as f32, height as f32)),
-            fire_system: FireSystem::new(),
+            quad_tree: Rc::new(RefCell::new(QuadTree::new(Bounds::new(0_f32, 0_f32, width as f32, height as f32)))),
+            systems: Vec::new(),
         }
     }
 
@@ -81,10 +85,14 @@ impl Game {
         index: u32,
     ) -> Option<Player> {
         
-        Player::new(&self.world, index, config, &self.quad_tree, &render)
+        Player::new(&self.world, index, config, self.quad_tree.borrow_mut(), &render)
     }
 
     pub fn init(&mut self, render: &mut Render) {
+
+        self.systems.push(Box::new(MoveSystem::new(self.quad_tree.clone())));
+        self.systems.push(Box::new(FireSystem::new()));
+        self.systems.push(Box::new(AiSystem::new(self.quad_tree.clone())));
         self.players[0] = self.create_player(
             render,
             "player1.yaml",
@@ -96,83 +104,6 @@ impl Game {
             "player2.yaml",
             1,
         );
-    }
-
-    fn update_input(&self, dt: f32) {
-        let ecs = self.world.deref().borrow();
-
-        ecs.visit_all3::<Transform, PlayerController, Movable>(|transform, controller, movable| {
-            if let Some(player) = &self.players[controller.player_index as usize] {
-                
-                movable.set_dirty(controller.state == PlayerState::Move);
-
-                let direction = controller.direction;
-
-                if !transform.get_direction().eq(&direction) {
-                    transform.set_direction(&direction);
-                }
-
-                if controller.can_spawn_bullet() {
-                    let tr_owner = transform.clone();
-                    let mut bullets = self.bullets.borrow_mut();
-                    let weak_ent = Entity::new(&self.world);
-                    let bullet = controller.spawn_bullet(&weak_ent).unwrap();
-                    let owner_id = movable.get_entity_id().unwrap();
-                    bullets.push(Box::new(move || {
-                        if let Some(entity) = weak_ent.upgrade() {
-                            let pos = tr_owner.get_position() + direction * 30.;
-                            entity.add_component(|| bullet);
-                            entity.add_component(|| {
-                                Transform::with_direction(&weak_ent, pos, direction)
-                            });
-                            entity.add_component(|| Movable::new(&weak_ent, 200.));
-                            entity.add_component(|| {
-                                Collider2d::with_ignore(
-                                    &weak_ent,
-                                    Bounds::with_center_position(pos.x, pos.y, 10., 10.),
-                                    vec![owner_id],
-                                )
-                            });
-                            entity.add_component(|| Sprite::new(&weak_ent, 10., 10., "tank1.png"));
-                            entity.add_component(|| Damagable::new(&weak_ent, 1));
-                            entity.add_component(|| Lifetime::new(&weak_ent, 2.));
-
-                            let id = entity.get_id();
-                            println!("bullet was spawned {:?}", id);
-                        }
-                    }));
-                }
-            }
-        });
-    }
-
-    fn spawn_bullets(&self) {
-        let mut v = self.bullets.borrow_mut();
-        while let Some(e) = v.pop() {
-            e();
-        }
-    }
-
-    pub fn move_system_update(&mut self, dt: f32) {
-        let ecs = self.world.deref().borrow();
-
-        ecs.visit_all2::<Transform, Movable>(|transform, movable| {
-            if movable.is_dirty() {
-                let pos = transform.get_position();
-                let speed = movable.get_speed() * dt;
-                let dir = transform.get_direction();
-                let new_pos = pos + dir * speed;
-                if let Some(entity) = transform.entity.upgrade() {
-                    if self.quad_tree.move_object(&ecs, &entity, new_pos) {
-                        transform.set_position(&new_pos);
-                    } else {
-                        println!("Cant move help!!! {:?}", new_pos);
-                    }
-                }
-
-                movable.set_dirty(false);
-            }
-        });
     }
 
     fn bullet_system_update(&self, dt: f32) {
@@ -194,22 +125,25 @@ impl Game {
 
     pub fn update(&mut self, dt: f32) {
         //self.map.update(&self.world);
-        self.update_input(dt);
+        for s in self.systems.iter_mut() {
+            s.update(&self.world, dt);
+        }
         self.process_events();
-        self.spawn_bullets();
         self.bullet_system_update(dt);
-        self.fire_system.update(&self.world, dt); 
-        self.move_system_update(dt);
-
+        //self.fire_system.update(&self.world, dt); 
+        //self.move_system_update(dt);
+        let mut ecs = self.world.borrow_mut();
+        ecs.process_self_events();
         self.frame_counter += 1;
     }
 
     pub fn process_events(&self) {
         let ecs = self.world.borrow();
          ecs.process_events::<PlayerAction, PlayerController>();
-         //ecs.process_events::<PlayerAction, Movable>();
          ecs.process_events::<PlayerAction, Gun>();
          ecs.clean_events::<PlayerAction>();
+
+         ecs.process_events::<CollisionEvent, Bullet>(); 
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {

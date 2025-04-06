@@ -3,13 +3,19 @@ use crate::quad_tree::Handle;
 use ::ecs::*;
 use ecs_derive::component_impl;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CollisionEvent {
+    OnEntity(EntityId),
+    OnBorder,
+}
+
 #[component_impl]
 #[derive(Debug, Clone)]
 pub struct Collider2d {
     bounds: Bounds,
     area_handle: Option<Handle>,
     reached_border: bool,
-    collision_ignore: Option<Box<[EntityId]>>,
+    pub collision_ignore: Option<Box<[EntityId]>>,
 }
 
 impl Collider2d {

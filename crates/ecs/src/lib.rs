@@ -26,6 +26,7 @@ pub trait Component {
 
 trait ComponentContainer {
     fn as_any(&self) -> &dyn Any;
+    fn reset(&mut self, index: usize);
 }
 
 type ComponentContainerVec<T> = Rc<RefCell<Vec<Option<T>>>>;
@@ -37,11 +38,12 @@ impl<T: 'static + Component> ComponentContainer for ComponentContainerVec<T> {
         self
     }
 
-    // fn reset(&self, id: usize) {
-    //     let mut s = self.deref().borrow_mut();
-
-    //     s[id] = None;
-    // }
+    fn reset(&mut self, id: usize) {
+        let mut s = self.deref().borrow_mut();
+        if id < s.len() {
+            s[id] = None;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq)]
@@ -110,8 +112,9 @@ impl Entity {
     pub fn visit<T: 'static + Component>(&self, f: impl FnOnce(&mut Option<T>)) {
         if let Some(ecs) = self.weak_ecs.upgrade() {
             let ecs = ecs.deref().borrow();
-
-            ecs.visit(self, f);
+            if ecs.is_componet_exist::<T>() {
+                ecs.visit(self.entity_id, f);
+            }
         }
     }
 
@@ -137,6 +140,7 @@ impl Entity {
     }
 
     pub fn process_event<E: Sized + Clone + 'static, T: 'static + Component + Listener<E>>(&self) {
+        
         let events = self.events.borrow_mut();
         self.visit::<T>(|component|{
             if let Some(component) = component {
@@ -272,7 +276,17 @@ impl Ecs {
         events.push_event(EcsEvent::EntityDestroyed(entity_id));
         drop(events);
 
+        println!("Entity {:?} removed", entity_id);
+
         cache.remove_entity(entity_id);
+    }
+
+    pub fn get_entity(&self, id: EntityId) -> Option<Rc<Entity>> {
+        let cache = self.entity_cache.borrow_mut();
+        if cache.is_entity_alive(id) {
+            return cache.entities[id.0].clone().into();
+        }
+        None
     }
 
     pub fn process_events<E: Sized + Clone + 'static, T: 'static + Component + Listener<E>>(&self) {
@@ -354,21 +368,22 @@ impl Ecs {
     }
 
     pub fn visit_all<T: 'static + Component>(&self, f: impl Fn(&mut T)) {
-        let cont_1 = self.get_container::<T>().unwrap();
-        let mut c1 = cont_1.deref().borrow_mut();
-        let iter = c1.iter_mut();
-        let alive_check = {
-            let cache = self.entity_cache.borrow();
-            cache.get_alive_check()
-        };
+        if let Some(cont_1) = self.get_container::<T>() {
+            let mut c1 = cont_1.deref().borrow_mut();
+            let iter = c1.iter_mut();
+            let alive_check = {
+                let cache = self.entity_cache.borrow();
+                cache.get_alive_check()
+            };
 
-        iter.enumerate().for_each(|pair| {
-            if alive_check.get(pair.0).unwrap() {
-                if let Some(a) = pair.1 {
-                    f(a);
+            iter.enumerate().for_each(|pair| {
+                if alive_check.get(pair.0).unwrap() {
+                    if let Some(a) = pair.1 {
+                        f(a);
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     pub fn visit_all2<A: 'static + Component, B: 'static + Component>(
@@ -429,20 +444,20 @@ impl Ecs {
         }
     }
 
-    pub fn visit<T>(&self, entity: &Entity, f: impl FnOnce(&mut Option<T>))
+    pub fn visit<T>(&self, entity_id: EntityId, f: impl FnOnce(&mut Option<T>))
     where
         T: 'static + Component,
     {
         {
             let cache = self.entity_cache.borrow();
-            if !cache.is_entity_alive(entity.entity_id) {
+            if !cache.is_entity_alive(entity_id) {
                 return;
             }
         }
 
         let cont_1 = self.get_container::<T>().unwrap();
         let mut c1 = cont_1.deref().borrow_mut();
-        if let Some(elem) = c1.get_mut(entity.entity_id.0) {
+        if let Some(elem) = c1.get_mut(entity_id.0) {
             f(elem);
         }
     }
@@ -472,5 +487,24 @@ impl Ecs {
         }
     }
 
-    fn update(&mut self) {}
+    pub fn process_self_events(&mut self) {
+
+        let events = {
+            let events = self.events.borrow();
+            events.get_events::<EcsEvent>()
+        };
+        
+        if let Some(events) = events {
+            for ev in events {
+                if let EcsEvent::EntityDestroyed(id) = ev {
+                    let mut tmp = self.components.iter_mut();
+                    while let Some(c) = tmp.next() {
+                        if let Some(c) = c {
+                            c.reset(id.0)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

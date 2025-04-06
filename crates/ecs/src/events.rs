@@ -90,6 +90,14 @@ impl EventSystem {
         }
     }
 
+    pub fn get_events<E: 'static + Sized + Clone>(&self) -> Option<Vec<E>> {
+        if let Some(stor)  = self.get_storage::<E>() {
+            return stor.events.clone().into();
+        }
+        
+        None
+    }
+
     pub fn clear<E: 'static + Sized + Clone>(&mut self) {
         let id = TypeId::of::<E>();
         if let Some(storage) = self.storages.get_mut(&id) {
