@@ -57,16 +57,29 @@ pub struct Gun {
     damage: u32,
     timer: f32,
     shoot_delay: f32,
+    auto_shoot: bool,
     spawner: Option<BulletSpawner>
 }
 
 impl Gun {
-    pub fn new(entity: &EntityWeak, damage: u32) -> Self {
+    pub fn new(entity: &EntityWeak, damage: u32, shoot_delay: f32) -> Self {
         Self {
             entity: entity.clone(),
             damage,
             timer: 0_f32,
-            shoot_delay: 0.3_f32,
+            shoot_delay,
+            auto_shoot: false,
+            spawner: None
+        }
+    }
+
+    pub fn with_auto_shoot(entity: &EntityWeak, damage: u32, shoot_delay: f32) -> Self {
+        Self {
+            entity: entity.clone(),
+            damage,
+            timer: 0_f32,
+            shoot_delay,
+            auto_shoot: true,
             spawner: None
         }
     }
@@ -83,6 +96,18 @@ impl Gun {
         if self.timer < self.shoot_delay {
             self.timer += delta;
         }
+        else if self.auto_shoot {
+            self.spawn_bullet();
+        }
+    }
+
+    pub fn spawn_bullet(&mut self) {
+        if self.can_spawn_bullet() {
+            let id = self.get_entity_id().unwrap();
+            let ent = self.entity.upgrade().unwrap();
+            let tr = ent.get_component_clone::<Transform>().unwrap();
+            self.spawner = Some(BulletSpawner::new(id, self.damage, tr.get_position(), tr.get_direction()))
+        }
     }
 
     pub fn consume_spawner(&mut self) -> Option<BulletSpawner> {
@@ -97,10 +122,7 @@ impl Listener<PlayerAction> for Gun {
     fn on_event(&mut self, event: PlayerAction) {
         println!("Gun action event receive");
         if event == PlayerAction::Shoot && self.can_spawn_bullet() {
-            let id = self.get_entity_id().unwrap();
-            let ent = self.entity.upgrade().unwrap();
-            let tr = ent.get_component_clone::<Transform>().unwrap();
-            self.spawner = Some(BulletSpawner::new(id, self.damage, tr.get_position(), tr.get_direction()))
+            self.spawn_bullet();
         }
     }
 }

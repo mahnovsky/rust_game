@@ -152,7 +152,6 @@ impl PlayerConfig {
 
 pub struct Player {
     entity: EntityWeak,
-    //pub action: PlayerAction,
     config: PlayerConfig,
 }
 
@@ -173,7 +172,7 @@ impl Player {
         entity.add_component(|| Movable::new(&entity_weak, 200.));
         entity.add_component(|| Damagable::new(&entity_weak, 10));
         entity.add_component(|| PlayerController::new(&entity_weak, index, dir));
-        entity.add_component(|| Gun::new(&entity_weak, 2));
+        entity.add_component(|| Gun::new(&entity_weak, 2, 0.4));
 
         entity.visit(|sprite: &mut Option<Sprite>| sprite.as_mut().unwrap().init(render));
         
@@ -190,18 +189,4 @@ impl Player {
     fn get_player_entity(&self) -> EntityWeak {
         self.entity.clone()
     }
-
-    // fn do_input(&mut self, event: &glfw::WindowEvent) {
-    //     if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
-    //         if let Some(item) = self.input_layer.iter().find(|x| x.0 == *in_key) {
-    //             self.action = item.1;
-    //         }
-    //     } else if let glfw::WindowEvent::Key(in_key, _, Action::Release, _) = event {
-    //         let res = self.input_layer.iter().find(|x| x.0 == *in_key);
-
-    //         if res.is_some() {
-    //             self.action = PlayerAction::None;
-    //         }
-    //     }
-    // }
 }

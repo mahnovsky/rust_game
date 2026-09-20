@@ -124,14 +124,11 @@ impl Game {
     }
 
     pub fn update(&mut self, dt: f32) {
-        //self.map.update(&self.world);
         for s in self.systems.iter_mut() {
             s.update(&self.world, dt);
         }
         self.process_events();
         self.bullet_system_update(dt);
-        //self.fire_system.update(&self.world, dt); 
-        //self.move_system_update(dt);
         let mut ecs = self.world.borrow_mut();
         ecs.process_self_events();
         self.frame_counter += 1;

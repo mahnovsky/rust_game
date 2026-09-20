@@ -41,13 +41,16 @@ impl System for MoveSystem {
                 let dir = transform.get_direction();
                 let new_pos = pos + dir * speed;
                 if let Some(entity) = transform.entity.upgrade() {
-                    let mut quad_tree = self.quad_tree.borrow_mut();
+                    let quad_tree = self.quad_tree.borrow_mut();
                     let summary = quad_tree.move_object(&ecs, &entity, new_pos);
                     if summary.can_move {
                         transform.set_position(&new_pos);
                     } else if let Some(collide_ent) = summary.collide_ent {
                         //println!("Cant move help!!! {:?}", new_pos);
                         entity.push_event(CollisionEvent::OnEntity(collide_ent));
+                    }
+                    else {
+                        entity.push_event(CollisionEvent::OnBorderReached);
                     }
                 }
 

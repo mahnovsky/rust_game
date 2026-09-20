@@ -6,7 +6,7 @@ use ecs_derive::component_impl;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CollisionEvent {
     OnEntity(EntityId),
-    OnBorder,
+    OnBorderReached,
 }
 
 #[component_impl]
