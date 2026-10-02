@@ -1,15 +1,12 @@
 use crate::draw_instance::DrawInstance;
 use crate::render::{make_quad, Drawable, Render};
-use ::ecs::*;
-use ecs_derive::component_impl;
 use std::convert::From;
-use std::rc::Rc;
+use std::sync::Arc;
 extern crate nalgebra_glm as glm;
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct Sprite {
-    instance: Option<Rc<DrawInstance>>,
+    instance: Option<Arc<DrawInstance>>,
     program_name: String,
     texture_name: String,
     width: f32,
@@ -17,9 +14,8 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn new(entity: &EntityWeak, width: f32, height: f32, texture_name: &str) -> Self {
+    pub fn new(width: f32, height: f32, texture_name: &str) -> Self {
         Sprite {
-            entity: entity.clone(),
             instance: None,
             program_name: String::from("default"),
             texture_name: String::from(texture_name),
@@ -36,7 +32,7 @@ impl Sprite {
         let texture = render.load_texture(self.texture_name.as_str());
         let instance = DrawInstance::new(program.unwrap(), vao, texture);
 
-        self.instance = Some(Rc::new(instance));
+        self.instance = Some(Arc::new(instance));
     }
 
     pub fn get_width(&self) -> f32 {

@@ -1,7 +1,4 @@
 extern crate nalgebra_glm as glm;
-use ::ecs::*;
-use ecs_derive::component_impl;
-
 use glm::vec2;
 
 pub enum TransformProp {
@@ -10,7 +7,6 @@ pub enum TransformProp {
     Rotation(f32),
 }
 
-#[component_impl]
 #[derive(Debug, Clone, Default)]
 pub struct Transform {
     rotation: f32,
@@ -21,9 +17,8 @@ pub struct Transform {
 }
 
 impl Transform {
-    pub fn new(entity: &EntityWeak, position: glm::Vec2) -> Self {
+    pub fn new(position: glm::Vec2) -> Self {
         let mut result = Self {
-            entity: entity.clone(),
             rotation: 0.,
             position,
             direction: vec2(0., 1.),
@@ -36,9 +31,8 @@ impl Transform {
         result
     }
 
-    pub fn with_direction(entity: &EntityWeak, position: glm::Vec2, dir: glm::Vec2) -> Self {
+    pub fn with_direction(position: glm::Vec2, dir: glm::Vec2) -> Self {
         let mut result = Self {
-            entity: entity.clone(),
             rotation: 0.,
             position,
             direction: dir,
@@ -62,7 +56,7 @@ impl Transform {
     pub fn apply(&mut self, prop: &TransformProp) {
         match prop {
             TransformProp::Position(p) => self.set_position(p),
-            TransformProp::Direction(d) => self.set_direction(d),
+            TransformProp::Direction(d) => self.set_direction(*d),
             TransformProp::Rotation(r) => self.set_rotation(*r),
         }
     }
@@ -85,7 +79,7 @@ impl Transform {
         self.transform_changed = true;
     }
 
-    pub fn set_direction(&mut self, dir: &glm::Vec2) {
+    pub fn set_direction(&mut self, dir: glm::Vec2) {
         self.direction = vec2(dir.x, dir.y);
         self.transform_changed = true;
     }

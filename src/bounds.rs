@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 // local coords
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Copy)]
 pub struct Bounds {
     x: f32,
     y: f32,

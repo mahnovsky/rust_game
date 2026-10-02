@@ -1,27 +1,23 @@
-use crate::bounds::Bounds;
-use crate::quad_tree::Handle;
-use ::ecs::*;
-use ecs_derive::component_impl;
+use crate::{bounds::Bounds, quad_tree::Handle};
+use legion::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CollisionEvent {
-    OnEntity(EntityId),
+    OnEntity(Entity),
     OnBorder,
 }
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct Collider2d {
     bounds: Bounds,
     area_handle: Option<Handle>,
     reached_border: bool,
-    pub collision_ignore: Option<Box<[EntityId]>>,
+    pub collision_ignore: Option<Box<[Entity]>>,
 }
 
 impl Collider2d {
-    pub fn new(entity: &EntityWeak, bounds: Bounds) -> Self {
+    pub fn new(bounds: Bounds) -> Self {
         Self {
-            entity: entity.clone(),
             bounds,
             area_handle: None,
             reached_border: false,
@@ -29,9 +25,8 @@ impl Collider2d {
         }
     }
 
-    pub fn with_ignore(entity: &EntityWeak, bounds: Bounds, ignores: Vec<EntityId>) -> Self {
+    pub fn with_ignore(bounds: Bounds, ignores: Vec<Entity>) -> Self {
         Self {
-            entity: entity.clone(),
             bounds,
             area_handle: None,
             reached_border: false,
@@ -39,7 +34,7 @@ impl Collider2d {
         }
     }
 
-    pub fn is_ignored_entity(&self, id: EntityId) -> bool {
+    pub fn is_ignored_entity(&self, id: Entity) -> bool {
         if let Some(ignores) = &self.collision_ignore {
             return ignores.contains(&id);
         }

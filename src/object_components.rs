@@ -1,73 +1,123 @@
-use ::ecs::*;
-use ecs_derive::component_impl;
-use glfw::ffi::GLFWcharfun;
+use std::ops::Add;
 
-use crate::{collider2d::CollisionEvent, player_config::PlayerAction, transform::Transform};
+use crate::{
+    collider2d::CollisionEvent, object_components::MoveSwitch::Stay, player_config::PlayerAction,
+    transform::Transform,
+};
+use glfw::{ffi::GLFWcharfun, Key::Left};
+//use glm::Vec2;
+use legion::*;
+use nalgebra_glm::Vec2;
 
-#[component_impl]
-#[derive(Debug, Clone)]
-pub struct Movable {
-    speed: f32,
-    dirty: bool,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
-impl Movable {
-    pub fn new(entity: &EntityWeak, speed: f32) -> Self {
-        Self {
-            entity: entity.clone(),
-            speed,
-            dirty: true,
+impl Direction {
+    pub fn to_vec(&self) -> Vec2 {
+        match *self {
+            Self::Left => Vec2::new(-1_f32, 0_f32),
+            Self::Right => Vec2::new(1_f32, 0_f32),
+            Self::Up => Vec2::new(0_f32, 1_f32),
+            Self::Down => Vec2::new(0_f32, -1_f32),
         }
     }
 
-    pub fn get_speed(&self) -> f32 {
-        self.speed
+    pub fn velocity(&self, speed: f32) -> Vec2 {
+        self.to_vec() * speed
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MoveSwitch {
+    Stay,
+    Forward,
+}
+
+impl MoveSwitch {
+    fn to_scalar(&self) -> f32 {
+        match *self {
+            Self::Stay => 0_f32,
+            Self::Forward => 1_f32,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Movable {
+    max_speed: u16,
+    move_switch: MoveSwitch,
+    direction: Direction,
+}
+
+impl Movable {
+    pub fn new(max_speed: u16, direction: Direction) -> Self {
+        Self {
+            max_speed,
+            move_switch: Stay,
+            direction,
+        }
     }
 
-    pub fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty;
+    pub fn get_move_fragment(&self, scale: f32) -> Vec2 {
+        self.direction.velocity(self.max_speed as f32) * scale * self.move_switch.to_scalar()
     }
 
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
+    pub fn get_direction_vec(&self) -> Vec2 {
+        self.direction.to_vec()
+    }
+
+    pub fn set_direction(&mut self, dir: Direction) {
+        self.direction = dir;
+    }
+
+    pub fn set_move_switch(&mut self, ms: MoveSwitch) {
+        self.move_switch = ms;
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct BulletSpawner {
-    pub owner_id: EntityId,
-    damage: u32,
+    pub owner_id: Entity,
+    pub damage: u32,
     pub pos: glm::Vec2,
     pub dir: glm::Vec2,
 }
 
 impl BulletSpawner {
-    fn new(owner_id: EntityId, damage: u32, pos: glm::Vec2, dir: glm::Vec2) -> Self {
-        Self { owner_id, damage, pos, dir }
+    fn new(owner_id: Entity, damage: u32, pos: glm::Vec2, dir: glm::Vec2) -> Self {
+        Self {
+            owner_id,
+            damage,
+            pos,
+            dir,
+        }
     }
 
-    pub fn spawn_bullet(&self, ent: &EntityWeak) -> Bullet {
-        Bullet::new(ent, self.owner_id, self.damage)
+    pub fn spawn_bullet(&self, ent: Entity) -> Bullet {
+        Bullet::new(self.owner_id, self.damage)
     }
 }
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct Gun {
     damage: u32,
     timer: f32,
     shoot_delay: f32,
-    spawner: Option<BulletSpawner>
+    spawner: Option<BulletSpawner>,
 }
 
 impl Gun {
-    pub fn new(entity: &EntityWeak, damage: u32) -> Self {
+    pub fn new(damage: u32) -> Self {
         Self {
-            entity: entity.clone(),
             damage,
             timer: 0_f32,
             shoot_delay: 0.3_f32,
-            spawner: None
+            spawner: None,
         }
     }
 
@@ -90,9 +140,9 @@ impl Gun {
             self.timer = 0.;
         }
         self.spawner.take()
-    } 
+    }
 }
-
+/*
 impl Listener<PlayerAction> for Gun {
     fn on_event(&mut self, event: PlayerAction) {
         println!("Gun action event receive");
@@ -100,30 +150,33 @@ impl Listener<PlayerAction> for Gun {
             let id = self.get_entity_id().unwrap();
             let ent = self.entity.upgrade().unwrap();
             let tr = ent.get_component_clone::<Transform>().unwrap();
-            self.spawner = Some(BulletSpawner::new(id, self.damage, tr.get_position(), tr.get_direction()))
+            self.spawner = Some(BulletSpawner::new(
+                id,
+                self.damage,
+                tr.get_position(),
+                tr.get_direction(),
+            ))
         }
     }
-}
+}*/
 
 pub enum BulletEvent {
-    OnHit(u32)
+    OnHit(u32),
 }
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct Bullet {
     damage: u32,
-    owner: EntityId,
-    target: Option<EntityId>,
+    owner: Entity,
+    target: Option<Entity>,
 }
 
 impl Bullet {
-    pub fn new(entity: &EntityWeak, owner: EntityId, damage: u32) -> Self {
+    pub fn new(owner: Entity, damage: u32) -> Self {
         Self {
-            entity: entity.clone(),
-            damage: damage.into(),
+            damage,
             owner,
-            target: None
+            target: None,
         }
     }
 
@@ -131,15 +184,15 @@ impl Bullet {
         self.damage
     }
 
-    pub fn get_owner(&self) -> EntityId {
+    pub fn get_owner(&self) -> Entity {
         self.owner
     }
 
-    pub fn consume_target(&mut self) -> Option<EntityId> {
+    pub fn consume_target(&mut self) -> Option<Entity> {
         self.target.take()
     }
 }
-
+/*
 impl Listener<CollisionEvent> for Bullet {
     fn on_event(&mut self, event: CollisionEvent) {
         use CollisionEvent::OnEntity;
@@ -148,32 +201,28 @@ impl Listener<CollisionEvent> for Bullet {
             self.target = ent_id.into();
         }
     }
-}
+}*/
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct Damagable {
     health: u32,
 }
 
 impl Damagable {
-    pub fn new(entity: &EntityWeak, health: u32) -> Self {
-        Self {
-            entity: entity.clone(),
-            health,
-        }
+    pub fn new(health: u32) -> Self {
+        Self { health }
     }
 
     pub fn do_damage(&mut self, damage: u32) {
-        if let Some(entity) = self.entity.upgrade() {
-            if self.health > damage {
-                self.health -= damage;
-            } else {
-                self.health = 0;
+        //if let Some(entity) = self.entity.upgrade() {
+        //    if self.health > damage {
+        //        self.health -= damage;
+        //    } else {
+        //        self.health = 0;
 
-                entity.kill();
-            }
-        }
+        //        entity.kill();
+        //    }
+        //}
         println!("do damage for {}, dmg: {}", self.health, damage);
     }
 
@@ -186,7 +235,6 @@ impl Damagable {
     }
 }
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct Lifetime {
     timer: f32,
@@ -195,9 +243,8 @@ pub struct Lifetime {
 }
 
 impl Lifetime {
-    pub fn new(entity: &EntityWeak, life_time: f32) -> Self {
+    pub fn new(life_time: f32) -> Self {
         Self {
-            entity: entity.clone(),
             timer: 0.,
             life_time,
             time_out: false,
@@ -212,11 +259,6 @@ impl Lifetime {
     }
 
     pub fn is_time_out(&self) -> bool {
-        if self.time_out {
-            if let Some(ent) = self.entity.upgrade() {
-                println!("Lifetime timeout {}, {:?}", self.timer, ent.get_id());
-            }
-        }
         self.time_out
     }
 }

@@ -4,10 +4,10 @@ use std::ffi::{c_void, CStr, CString};
 use crate::gl_wrappers::{self, Bindable, VertexArrayObject};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::{mem, ptr};
 
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 
 use crate::gl_wrappers::ShaderProgram;
 
@@ -180,7 +180,7 @@ pub fn draw_instance(program: ShaderProgram, vao: u32, texture: u32) {
 }
 
 pub struct ShaderCache {
-    programs: HashMap<String, Rc<ShaderProgram>>,
+    programs: HashMap<String, Arc<ShaderProgram>>,
 }
 
 impl ShaderCache {
@@ -194,18 +194,18 @@ impl ShaderCache {
         self.programs.contains_key(name)
     }
 
-    pub fn get_program(&mut self, name: &str) -> Option<Rc<ShaderProgram>> {
+    pub fn get_program(&mut self, name: &str) -> Option<Arc<ShaderProgram>> {
         match self.programs.get(name) {
             Some(value) => Some(value.clone()),
             None => self.try_load_program(name),
         }
     }
 
-    fn try_load_program(&mut self, name: &str) -> Option<Rc<ShaderProgram>> {
+    fn try_load_program(&mut self, name: &str) -> Option<Arc<ShaderProgram>> {
         if name == "default" {
             if let Some(default_program) = make_default_shader_program() {
-                let program = Rc::new(default_program);
-                self.programs.insert(name.to_string(), Rc::clone(&program));
+                let program = Arc::new(default_program);
+                self.programs.insert(name.to_string(), Arc::clone(&program));
 
                 return Some(program);
             }
@@ -234,7 +234,7 @@ impl Render {
         }
     }
 
-    pub fn get_shader(&self, name: &str) -> Option<Rc<ShaderProgram>> {
+    pub fn get_shader(&self, name: &str) -> Option<Arc<ShaderProgram>> {
         let mut shader_cache = self.shader_cache.borrow_mut();
         if shader_cache.is_program_exist(name) {
             shader_cache.get_program(name)
@@ -248,13 +248,12 @@ impl Render {
     }
 
     pub fn load_texture(&self, file_name: &str) -> u32 {
-        
         let textures = self.textures.borrow();
         if let Some(texture) = textures.get(file_name) {
             return *texture;
         }
         drop(textures);
-        
+
         if let Ok(img) = ImageReader::open(file_name) {
             let img = img.decode().unwrap().flipv();
 

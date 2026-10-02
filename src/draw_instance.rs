@@ -8,17 +8,17 @@ use crate::gl_wrappers::VertexArrayObject;
 use crate::render::Drawable;
 use crate::render::Render;
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct DrawInstance {
-    program: Rc<ShaderProgram>,
+    program: Arc<ShaderProgram>,
     array_object: VertexArrayObject,
     texture: u32,
 }
 
 impl DrawInstance {
-    pub fn new(program: Rc<ShaderProgram>, vao: VertexArrayObject, texture: u32) -> Self {
+    pub fn new(program: Arc<ShaderProgram>, vao: VertexArrayObject, texture: u32) -> Self {
         DrawInstance {
             program,
             array_object: vao,

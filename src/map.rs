@@ -1,6 +1,6 @@
 use crate::bounds::Bounds;
 use crate::collider2d::Collider2d;
-use ::ecs::*;
+use legion::*;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -85,7 +85,7 @@ impl Map {
                 if cix < self.size_x && ciy < self.size_y {
                     let index = (cix + ciy * self.size_x) as usize;
                     let checked_cell = &self.cells[index];
-                    if let Some(cell_bounds) = &checked_cell.bounds {
+                    /*if let Some(cell_bounds) = &checked_cell.bounds {
                         if cell_bounds.has_collision(&bounds) {
                             let mut objects = checked_cell.objects.borrow_mut();
 
@@ -97,9 +97,9 @@ impl Map {
                                     }
                                 }
                             }
-                            //objects.insert(entity.clone());
+                            objects.insert(entity.clone());
                         }
-                    }
+                    }*/
                 }
             }
 
@@ -109,20 +109,19 @@ impl Map {
         false
     }
 
-    pub fn move_object(&mut self, ecs: &EcsRc, entity_id: usize, new_pos: &glm::Vec2) -> bool {
+    pub fn move_object(&mut self, world: &World, entity_id: usize, new_pos: &glm::Vec2) -> bool {
         false
     }
 
-    pub fn update(&mut self, world: &EcsRc) {
-        let ecs = world.borrow();
-        if let Some(colliders) = ecs.get_container::<Collider2d>() {
+    pub fn update(&mut self, world: &World) {
+        /*if let Some(colliders) = world.get_container::<Collider2d>() {
             let colliders = colliders.deref().borrow();
             for collider in colliders.iter().filter_map(|x| x.as_ref()) {
                 //println!("place b {:?}", bounds);
                 //self.try_place(collider.entity.clone(), collider.get_bounds());
             }
         }
-        /*
+
         ecs.visit_all(|collider: &mut Option<Collider2d>| {
             if let Some(collider) = collider {
                 let bounds = collider.get_bounds();

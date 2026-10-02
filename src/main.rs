@@ -8,17 +8,17 @@ mod game;
 mod gl_wrappers;
 mod map;
 mod object_components;
+mod player_config;
 mod quad_tree;
 mod render;
 mod sprite;
-mod transform;
-mod player_config;
 mod system;
+mod transform;
 extern crate core;
 extern crate nalgebra_glm as glm;
 
 use glfw::{Action, Context, Key, OpenGlProfileHint, WindowHint};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{ptr::null, time::SystemTime};
 
 use crate::game::Game;
 
@@ -39,9 +39,17 @@ fn main() {
     // Make the window's context current
     window.make_current();
     window.set_key_polling(true);
-    
-    gl::load_with(|s| window.get_proc_address(s) as *const _);
-    gl::Viewport::load_with(|s| window.get_proc_address(s) as *const _);
+
+    gl::load_with(|s| {
+        let Some(x) = window.get_proc_address(s) else {
+            return null();
+        };
+
+        x as _
+    });
+    gl::Viewport::load_with(|s| unsafe {
+        window.get_proc_address(s).unwrap_unchecked() as *const _
+    });
 
     let mut render = render::Render::new();
     let (w, h) = window.get_size();
@@ -57,8 +65,8 @@ fn main() {
     render::load_projection_matrix(&render.get_shader("default").unwrap(), w as u32, h as u32);
     let mut game = Game::new(w as u32, h as u32);
 
-    game.init(&mut render);   
-    
+    game.init(&mut render);
+
     let mut fps: u32 = 0;
     let mut timer: f64 = 0.;
     let mut delta: f64 = 0.;

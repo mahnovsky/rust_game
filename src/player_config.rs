@@ -1,37 +1,37 @@
-use std::cell::RefMut;
-use std::{collections::HashMap, fs};
+use crate::{
+    bounds::Bounds,
+    collider2d::Collider2d,
+    game::InputLayoutComponent,
+    object_components::{Bullet, Damagable, Direction, Gun, Lifetime, Movable, MoveSwitch},
+    quad_tree::QuadTree,
+    render::Render,
+    sprite::Sprite,
+    transform::Transform,
+};
 use fxhash::FxHashMap;
-use ecs::EntityWeak;
-use glfw::{Key, Action};
-use yaml_rust2::{Yaml, YamlLoader};
+use glfw::{Action, Key};
+use legion::*;
+use rand::rand_core::utils::Word;
+use std::cell::RefMut;
 use std::str::FromStr;
+use std::{collections::HashMap, fs};
 use strum_macros::EnumString;
-use ::ecs::*;
-use ecs_derive::component_impl;
-use crate::bounds::Bounds;
-use crate::collider2d::Collider2d;
-use crate::quad_tree::QuadTree;
-use crate::object_components::{Bullet, Damagable, Gun, Lifetime, Movable};
-use crate::render::Render;
-use crate::sprite::Sprite;
-use crate::transform::Transform;
-use crate::game::InputLayoutComponent;
-
+use yaml_rust2::{Yaml, YamlLoader};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlayerState {
     Idle,
-    Move
+    Move,
 }
 
-#[component_impl]
 #[derive(Debug, Clone)]
 pub struct PlayerController {
-    pub direction: glm::Vec2,
     pub player_index: u32,
     pub state: PlayerState,
+    direction: Direction,
+    input_layout: InputLayoutComponent,
 }
-
+/*
 impl Listener<PlayerAction> for PlayerController {
     fn on_event(&mut self, player_input: PlayerAction) {
         self.direction = match player_input {
@@ -39,33 +39,32 @@ impl Listener<PlayerAction> for PlayerController {
             PlayerAction::MoveRight => glm::vec2(1., 0.),
             PlayerAction::MoveTop => glm::vec2(0., 1.),
             PlayerAction::MoveDown => glm::vec2(0., -1.),
-            PlayerAction::None | PlayerAction::Shoot => self.direction
+            PlayerAction::None | PlayerAction::Shoot => self.direction,
         };
 
         self.state = match player_input {
-            PlayerAction::MoveLeft |
-            PlayerAction::MoveRight |
-            PlayerAction::MoveTop |
-            PlayerAction::MoveDown => PlayerState::Move,
+            PlayerAction::MoveLeft
+            | PlayerAction::MoveRight
+            | PlayerAction::MoveTop
+            | PlayerAction::MoveDown => PlayerState::Move,
             PlayerAction::Shoot => self.state,
-            _ => PlayerState::Idle
+            _ => PlayerState::Idle,
         };
 
         //println!("Current state {:?}", self.state);
     }
-}
+}*/
 
 impl PlayerController {
-    fn new(entity: &EntityWeak, player_index: u32, dir: glm::Vec2) -> Self {
+    fn new(player_index: u32, direction: Direction, input_layout: InputLayoutComponent) -> Self {
         Self {
-            entity: entity.clone(),
-            direction: glm::vec2(dir.x, dir.y),
             player_index,
             state: PlayerState::Idle,
+            direction,
+            input_layout,
         }
     }
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, EnumString)]
 pub enum PlayerAction {
@@ -84,54 +83,59 @@ pub struct PlayerConfig {
 fn map_key(key: &Yaml) -> Option<Key> {
     let name = key.as_str()?;
     println!("{:?}", name);
-    match name {
-        "A" => Some(Key::A),
-        "S" => Some(Key::S),
-        "D" => Some(Key::D),
-        "W" => Some(Key::W),
-        "Left" => Some(Key::Left),
-        "Right" => Some(Key::Right),
-        "Up" => Some(Key::Up),
-        "Down" => Some(Key::Down),
-        "LeftControl" => Some(Key::LeftControl),
-        "RightControl" => Some(Key::RightControl),
-        "RightAlt" => Some(Key::RightAlt),
-    
-        _ => None,
-    }
+    let k = match name {
+        "A" => Key::A,
+        "S" => Key::S,
+        "D" => Key::D,
+        "W" => Key::W,
+        "Left" => Key::Left,
+        "Right" => Key::Right,
+        "Up" => Key::Up,
+        "Down" => Key::Down,
+        "LeftControl" => Key::LeftControl,
+        "RightControl" => Key::RightControl,
+        "RightAlt" => Key::RightAlt,
+        _ => return None,
+    };
+
+    Some(k)
 }
 
 fn map_action(action: &Yaml) -> Option<PlayerAction> {
     let name = action.as_str()?;
-    
+
     PlayerAction::from_str(name).ok()
 }
 
 fn parse_key_actions(doc: &Yaml) -> Option<FxHashMap<Key, PlayerAction>> {
     println!("Test ******* {}", doc["key_actions"].is_array());
     if let Some(keys) = doc["key_actions"].as_vec() {
-        
         let mut res = FxHashMap::<Key, PlayerAction>::with_hasher(fxhash::FxBuildHasher::new());
         for item in keys.iter() {
             println!("{:?}", item);
-            let key = map_key(&item["key"]);
-            let action = map_action(&item["action"]);
-            if let (Some(k), Some(a)) = (key, action) {
-                println!("{:?} {:?}", k, a);
-                res.insert(k, a);
-            }
+
+            let Some(key) = map_key(&item["key"]) else {
+                continue;
+            };
+
+            let Some(action) = map_action(&item["action"]) else {
+                continue;
+            };
+
+            println!("{:?} {:?}", key, action);
+            res.insert(key, action);
         }
 
         return res.into();
     }
 
     None
-} 
+}
 
 impl PlayerConfig {
-    fn new(player_name: &str) -> Option<Self> {
+    fn from_file(player_name: &str) -> Option<Self> {
         let content = fs::read_to_string(std::path::Path::new(player_name));
-        
+
         if let Ok(content) = content {
             println!("---------- {}", content.len());
             let docs = YamlLoader::load_from_str(&content).unwrap();
@@ -140,27 +144,57 @@ impl PlayerConfig {
 
             let actions = parse_key_actions(doc)?;
 
-            return Self{ key_actions: actions }.into();
+            return Self {
+                key_actions: actions,
+            }
+            .into();
         }
         None
     }
 
-    fn get_input_component(&self, entity: EntityWeak) -> InputLayoutComponent {
-        InputLayoutComponent::new(entity, self.key_actions.clone())
+    fn get_input_component(&self) -> InputLayoutComponent {
+        InputLayoutComponent::new(self.key_actions.clone())
     }
 }
 
+pub fn spawn_player(
+    world: &mut World,
+    quad_tree: &mut QuadTree,
+    index: u32,
+    config_file: &str,
+) -> Option<Entity> {
+    let config = PlayerConfig::from_file(config_file)?;
+
+    let dir = Direction::Up;
+    let pos = glm::vec2(50. + (900 * index) as f32, 100.);
+    let size = 50_f32;
+    let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
+
+    Some(world.push((
+        Sprite::new(size, size, "tank.png"),
+        Transform::with_direction(pos, dir.to_vec()),
+        Collider2d::new(bounds),
+        Movable::new(200, dir),
+        Damagable::new(10),
+        PlayerController::new(index, dir, config.get_input_component()),
+        Gun::new(2),
+    )))
+}
+/*
 pub struct Player {
-    entity: EntityWeak,
     //pub action: PlayerAction,
     config: PlayerConfig,
-}
+}*/
 
-impl Player {
-   pub fn new(ecs: &EcsRc, index: u32, config: &str, quad_tree: RefMut<'_, QuadTree>, render: &Render) -> Option<Self> {
+impl PlayerController {
+    /*pub fn new(
+        world: &World,
+        index: u32,
+        config: &str,
+        quad_tree: &mut QuadTree,
+        render: &Render,
+    ) -> Self {
         let config = PlayerConfig::new(config).unwrap();
-        let entity_weak = Entity::new(ecs);
-        let entity = entity_weak.upgrade()?;
         let dir = glm::vec2(0_f32, 1_f32);
         let pos = glm::vec2(50. + (900 * index) as f32, 100.);
         let size = 50_f32;
@@ -176,32 +210,63 @@ impl Player {
         entity.add_component(|| Gun::new(&entity_weak, 2));
 
         entity.visit(|sprite: &mut Option<Sprite>| sprite.as_mut().unwrap().init(render));
-        
-        let input = config.get_input_component(entity_weak.clone());
+
+        let input = config.get_input_component();
+
         entity.add_component(|| input);
-        quad_tree.place( ecs.borrow(), &entity);
+        quad_tree.place();
         Self {
-            entity: entity_weak.clone(),
             //action: PlayerAction::None,
             config,
-        }.into()
+        }
+    }*/
+
+    fn update_state(&mut self, player_input: PlayerAction) {
+        self.direction = match player_input {
+            PlayerAction::MoveLeft => Direction::Left,
+            PlayerAction::MoveRight => Direction::Right,
+            PlayerAction::MoveTop => Direction::Up,
+            PlayerAction::MoveDown => Direction::Down,
+            PlayerAction::None | PlayerAction::Shoot => self.direction,
+        };
+
+        self.state = match player_input {
+            PlayerAction::MoveLeft
+            | PlayerAction::MoveRight
+            | PlayerAction::MoveTop
+            | PlayerAction::MoveDown => PlayerState::Move,
+            PlayerAction::Shoot => self.state,
+            _ => PlayerState::Idle,
+        };
+
+        println!("Current state {:?}", self.state);
     }
 
-    fn get_player_entity(&self) -> EntityWeak {
-        self.entity.clone()
+    pub fn do_input(&mut self, event: &glfw::WindowEvent) {
+        if let Some(p) = self.input_layout.do_input(event) {
+            println!("do_input action {:?}", p);
+            self.update_state(p);
+        }
+
+        //if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
+        //    if let Some(item) = self.input_layout.iter().find(|x| x.0 == *in_key) {
+        //        self.action = item.1;
+        //    }
+        //} else if let glfw::WindowEvent::Key(in_key, _, Action::Release, _) = event {
+        //    let res = self.input_layer.iter().find(|x| x.0 == *in_key);
+
+        //    if res.is_some() {
+        //        self.action = PlayerAction::None;
+        //    }
+        //}
     }
 
-    // fn do_input(&mut self, event: &glfw::WindowEvent) {
-    //     if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
-    //         if let Some(item) = self.input_layer.iter().find(|x| x.0 == *in_key) {
-    //             self.action = item.1;
-    //         }
-    //     } else if let glfw::WindowEvent::Key(in_key, _, Action::Release, _) = event {
-    //         let res = self.input_layer.iter().find(|x| x.0 == *in_key);
-
-    //         if res.is_some() {
-    //             self.action = PlayerAction::None;
-    //         }
-    //     }
-    // }
+    pub fn update_movable_state(&self, movable: &mut Movable) {
+        movable.set_direction(self.direction);
+        let switch = match self.state {
+            PlayerState::Move => MoveSwitch::Forward,
+            PlayerState::Idle => MoveSwitch::Stay,
+        };
+        movable.set_move_switch(switch);
+    }
 }

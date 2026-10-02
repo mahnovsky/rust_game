@@ -1,8 +1,10 @@
 use crate::bounds::Bounds;
 use crate::collider2d::Collider2d;
-use ecs::*;
+use fxhash::{FxBuildHasher, FxHashMap, FxHashSet, FxHasher};
+use legion::*;
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::{HashSet, VecDeque};
+use std::hash::Hash;
 
 const CHUNKS: usize = 4;
 const MAX_DEPTH: u32 = 3;
@@ -43,7 +45,7 @@ struct AreaNode {
     parent: Handle,
     bounds: Bounds,
     children: Option<[Handle; CHUNKS]>,
-    objects: RefCell<HashSet<EntityId>>,
+    objects: FxHashSet<Entity>,
 }
 
 impl AreaNode {
@@ -61,26 +63,36 @@ impl AreaNode {
         None
     }
 
-    fn insert_object(&self, object_id: EntityId) {
-        let mut objects = self.objects.borrow_mut();
-
+    fn insert_object(&mut self, object_id: Entity) {
         println!("Object {:?} enter area {:?}", object_id, self.handle.index);
-        objects.insert(object_id);
+        self.objects.insert(object_id);
     }
 
-    fn remove_object(&self, object_id: EntityId) {
-        let mut objects = self.objects.borrow_mut();
+    fn remove_object(&mut self, object_id: Entity) {
         println!("Object {:?} leave area {:?}", object_id, self.handle.index);
-        objects.remove(&object_id);
+        self.objects.remove(&object_id);
     }
 }
 
 pub struct CollisionSummary {
-    pub collide_ent: Option<EntityId>,
+    pub collide_ent: Option<Entity>,
     pub can_move: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Object {
+    ent: Entity,
+    bounds: Bounds,
+}
+
+impl Hash for Object {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ent.hash(state);
+    }
+}
+
 pub struct QuadTree {
+    objects: FxHashMap<Entity, Collider2d>,
     nodes: [Option<AreaNode>; MAX_NODE_COUNT],
     tail: Cell<usize>,
     bounds: Bounds,
@@ -91,6 +103,7 @@ pub struct QuadTree {
 impl QuadTree {
     pub fn new(bounds: Bounds) -> Self {
         Self {
+            objects: FxHashMap::with_hasher(FxBuildHasher::new()),
             nodes: std::array::from_fn(|_| None),
             tail: Cell::new(0),
             bounds,
@@ -146,7 +159,7 @@ impl QuadTree {
             parent,
             bounds,
             children,
-            objects: RefCell::new(HashSet::new()),
+            objects: FxHashSet::with_hasher(FxBuildHasher::new()),
         };
         self.insert(handle, node);
 
@@ -201,86 +214,88 @@ impl QuadTree {
         prev_handle
     }
 
-    pub fn on_entity_removed(&self, id: EntityId) {
+    pub fn on_entity_removed(&mut self, id: Entity) {
         let handle = self.find_child_node_if(self.root.unwrap(), |node| {
             if let Some(node) = node {
-                let objects = node.objects.borrow();
-
-                return objects.contains(&id);
+                return node.objects.contains(&id);
             }
             false
         });
         if let Some(handle) = handle {
-            if let Some(node) = &self.nodes[handle.index] {
+            if let Some(node) = &mut self.nodes[handle.index] {
                 node.remove_object(id);
             }
         }
     }
 
-    pub fn can_place(&self, ecs: Ref<'_, Ecs>, bounds: &Bounds) -> bool {
-        
-        let ignored = None;
-        
-        if let Some(id) = self.get_collision(&ecs,None, &ignored, &bounds) {
+    pub fn can_place(&self, world: &World, bounds: &Bounds) -> bool {
+        if let Some(id) = self.get_collision(None, None, &bounds) {
             return false;
         }
         true
     }
 
-    pub fn place(&self, ecs: Ref<'_, Ecs>, entity: &Entity) -> bool {
-        let collider = entity.get_component_clone::<Collider2d>();
-        if let Some(collider) = collider {
-            let bounds = collider.get_bounds();
-            let ignored = None;
-            if let Some(id) = self.get_collision(&ecs, entity.get_id().into(), &ignored, &bounds) {
-                return false;
-            }
+    pub fn place(&self, world: &mut World, entity: Entity) -> bool {
+        let Some(entry) = world.entry(entity) else {
+            return false;
+        };
 
-            let handle = self.get_place_node(&bounds);
+        let Ok(collider) = entry.get_component::<Collider2d>() else {
+            return false;
+        };
 
-            if let Some(handle) = handle {
-                let node = self.nodes[handle.index].as_ref().unwrap();
-
-                node.insert_object(entity.get_id());
-                entity.visit::<Collider2d>(|collider| {
-                    if let Some(collider) = collider {
-                        collider.set_area_handle(Some(handle));
-                    }
-                });
-
-                return true;
-            }
+        let bounds = collider.get_bounds();
+        if let Some(id) = self.get_collision(Some(entity), None, &bounds) {
+            return false;
         }
+
+        let handle = self.get_place_node(&bounds);
+
+        if let Some(handle) = handle {
+            let node = self.nodes[handle.index].as_ref().unwrap();
+
+            /*node.insert_object(entity);
+            entity.visit::<Collider2d>(|collider| {
+                if let Some(collider) = collider {
+                    collider.set_area_handle(Some(handle));
+                }
+            });*/
+
+            return true;
+        }
+
         return false;
     }
 
     fn get_collision(
         &self,
-        ecs: &Ref<'_, Ecs>,
-        entity_id: Option<EntityId>,
-        ignored: &Option<Box<[EntityId]>>,
+        entity_id: Option<Entity>,
+        ignored: Option<&[Entity]>,
         bounds: &Bounds,
-    ) -> Option<EntityId> {
+    ) -> Option<Entity> {
         let nodes_count = self.nodes.len();
         let mut next_handle = self.root;
         let mut check_nodes = VecDeque::new();
-        
+
         while let Some(handle) = next_handle {
             if handle.index < nodes_count {
                 let node = self.nodes[handle.index].as_ref().unwrap();
-                for c in node.objects.borrow().iter().filter_map(|e| {
-                    let ignore = if let Some(ignored) = ignored {
-                        ignored.contains(e)
-                    } else { false };
-                    if entity_id.filter(|id| *id == *e).is_none() && !ignore {
-                        ecs.get_component::<Collider2d>(*e)
-                    } else {
-                        None
-                    }
-                }) {
-                    if c.get_bounds().has_collision(bounds) {
+                let iter = node.objects.iter().filter(|e| {
+                    let s = entity_id.iter().any(|ent| *ent == **e);
+                    if let Some(ignore) = ignored.as_ref().map(|x| x.contains(e)) {
+                        return !ignore && !s;
+                    };
 
-                        return c.get_entity_id();
+                    !s
+                });
+
+                for ent in iter {
+                    let Some(collider) = self.objects.get(ent) else {
+                        continue;
+                    };
+
+                    if collider.get_bounds().has_collision(bounds) {
+                        return Some(*ent);
                     }
                 }
                 if let Some(node_children) = node.children {
@@ -301,49 +316,47 @@ impl QuadTree {
         None
     }
 
-    pub fn move_object(&self, ecs: &Ref<'_, Ecs>, entity: &Entity, new_pos: glm::Vec2) -> CollisionSummary {
-        if let Some(collider) = ecs.get_component::<Collider2d>(entity.get_id()) {
-            let mut bounds = collider.get_bounds();
-            bounds.set_center_position(new_pos.x, new_pos.y);
-            let handle = self.get_place_node(&bounds);
+    pub fn move_object(&mut self, entity: Entity, new_pos: glm::Vec2) -> Option<CollisionSummary> {
+        let mut collider = self.objects.get(&entity)?.clone();
+        let mut bounds = collider.get_bounds();
+        bounds.set_center_position(new_pos.x, new_pos.y);
 
-            if let Some(handle) = handle {
-                let collide_ent = self.get_collision(
-                    ecs, 
-                    entity.get_id().into(), 
-                    &collider.collision_ignore, 
-                    &bounds);
+        let handle = self.get_place_node(&bounds);
 
-                if collide_ent.is_some() {
-                    return CollisionSummary{ collide_ent, can_move: false };
-                }
-                if let Some(old_handle) = collider.get_area_handle() {
-                    if old_handle != handle {
-                        let node = self.nodes[handle.index].as_ref().unwrap();
-                        node.insert_object(entity.get_id());
-                        if let Some(node) = &self.nodes[old_handle.index] {
-                            node.remove_object(entity.get_id());
-                        }
-                    }
-                }
+        if let Some(handle) = handle {
+            let collide_ent = self.get_collision(Some(entity), None, &bounds);
 
-                ecs.visit::<Collider2d>(entity.get_id(), |collider| {
-                    if let Some(collider) = collider.as_mut() {
-                        collider.set_position(new_pos.x, new_pos.y);
-                        collider.set_reached_border(false);
-                        collider.set_area_handle(Some(handle));
-                    }
+            if collide_ent.is_some() {
+                return Some(CollisionSummary {
+                    collide_ent,
+                    can_move: false,
                 });
-
-                return CollisionSummary{ collide_ent: None, can_move: true };
             }
+            if let Some(old_handle) = collider.get_area_handle() {
+                if old_handle != handle {
+                    let node = self.nodes[handle.index].as_mut().unwrap();
+                    node.insert_object(entity);
+                    if let Some(node) = &mut self.nodes[old_handle.index] {
+                        node.remove_object(entity);
+                    }
+                }
+            }
+
+            collider.set_position(new_pos.x, new_pos.y);
+            collider.set_reached_border(false);
+            collider.set_area_handle(Some(handle));
+
+            return Some(CollisionSummary {
+                collide_ent: None,
+                can_move: true,
+            });
         }
-        ecs.visit::<Collider2d>(entity.get_id(), |collider| {
-            if let Some(collider) = collider.as_mut() {
-                collider.set_reached_border(true);
-            }
-        });
 
-        CollisionSummary{ collide_ent: None, can_move: false }
+        collider.set_reached_border(true);
+
+        Some(CollisionSummary {
+            collide_ent: None,
+            can_move: false,
+        })
     }
 }

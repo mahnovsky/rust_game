@@ -1,14 +1,14 @@
-use std::{cell::RefCell, rc::Rc};
-use super::system_trait::System;
 use crate::{
-    bounds::Bounds, 
-    collider2d::{Collider2d, CollisionEvent}, 
-    object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable}, 
-    player_config::{PlayerController, PlayerState}, 
-    quad_tree::QuadTree, 
-    sprite::Sprite, 
-    transform::Transform
+    bounds::Bounds,
+    collider2d::{Collider2d, CollisionEvent},
+    object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable},
+    player_config::{PlayerController, PlayerState},
+    quad_tree::QuadTree,
+    sprite::Sprite,
+    transform::Transform,
 };
+use legion::*;
+use std::{cell::RefCell, rc::Rc};
 pub struct MoveSystem {
     quad_tree: Rc<RefCell<QuadTree>>,
 }
@@ -19,40 +19,29 @@ impl MoveSystem {
     }
 }
 
-impl System for MoveSystem {
-    fn update(&mut self, world: &ecs::EcsRc, delta: f32) {
-        let ecs = world.borrow();
+pub fn move_update(world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
+    let mut query = <(Entity, &Movable, &mut Transform)>::query();
 
-        ecs.visit_all3::<Transform, PlayerController, Movable>(|transform, controller, movable| {
-            
-            movable.set_dirty(controller.state == PlayerState::Move);
+    //let mut move_list = Vec::<(&mut Transform, glm::Vec2)>::new();
 
-            let direction = controller.direction;
+    for (entity, movable, transform) in query.iter_mut(world) {
+        let move_delta = movable.get_move_fragment(delta);
 
-            if !transform.get_direction().eq(&direction) {
-                transform.set_direction(&direction);
-            }
-        });
+        let pos = transform.get_position();
+        let new_pos = pos + move_delta;
 
-        ecs.visit_all2::<Transform, Movable>(|transform, movable| {
-            if movable.is_dirty() {
-                let pos = transform.get_position();
-                let speed = movable.get_speed() * delta;
-                let dir = transform.get_direction();
-                let new_pos = pos + dir * speed;
-                if let Some(entity) = transform.entity.upgrade() {
-                    let mut quad_tree = self.quad_tree.borrow_mut();
-                    let summary = quad_tree.move_object(&ecs, &entity, new_pos);
-                    if summary.can_move {
-                        transform.set_position(&new_pos);
-                    } else if let Some(collide_ent) = summary.collide_ent {
-                        //println!("Cant move help!!! {:?}", new_pos);
-                        entity.push_event(CollisionEvent::OnEntity(collide_ent));
-                    }
-                }
+        transform.set_direction(movable.get_direction_vec());
+        quad_tree.move_object(*entity, new_pos);
+        //println!("move system update {:?}", movable.get_direction_vec());
+        //let Some(summary) = quad_tree.move_object(&world, *entity, new_pos) else {
+        //    return;
+        //};
 
-                movable.set_dirty(false);
-            }
-        });
+        //if summary.can_move {
+        //    transform.set_position(&new_pos);
+        //} else if let Some(collide_ent) = summary.collide_ent {
+        //    //println!("Cant move help!!! {:?}", new_pos);
+        //    // TODO: entity.push_event(CollisionEvent::OnEntity(collide_ent));
+        //}
     }
 }
