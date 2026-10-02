@@ -99,6 +99,10 @@ impl Entity {
 
             ecs.remove_entity(self.entity_id);
         }
+        else {
+            //println!("***** FAIL *******");
+            panic!("***** FAIL *******");
+        }
     }
 
     pub fn add_component<T: 'static + Component>(&self, creator: impl FnOnce() -> T) {
@@ -149,6 +153,12 @@ impl Entity {
         });
     }
 
+    pub fn process_event_for_listener<E: Sized + Clone + 'static>(&self, listener: &mut dyn Listener<E>) {
+        
+        let events = self.events.borrow_mut();
+        events.process_event(listener);
+    }
+
     pub fn clean_events<E: Sized + Clone + 'static>(&self) {
         let mut events = self.events.borrow_mut();
 
@@ -181,8 +191,8 @@ impl EntityCash {
 
         let index = self.entities.len();
         self.entities.resize_with(index + 1, || None);
-        let iter = (index + Self::GROW_SIZE)..index;
-        self.free_indexes.extend(iter.map(EntityId));
+        //let iter = (index + Self::GROW_SIZE)..index;
+        //self.free_indexes.extend(iter.map(EntityId));
         if self.check_bit.len() <= index {
             self.check_bit
                 .grow(self.check_bit.len() + Self::GROW_SIZE, false);
