@@ -3,13 +3,17 @@ use crate::{
     collider2d::Collider2d,
     game::InputLayoutComponent,
     object_components::{Bullet, Damagable, Direction, Gun, Lifetime, Movable, MoveSwitch},
+    player_config::PlayerState::Idle,
     quad_tree::QuadTree,
     render::Render,
     sprite::Sprite,
     transform::Transform,
 };
 use fxhash::FxHashMap;
-use glfw::{Action, Key};
+use glfw::{
+    Action,
+    Key::{self, Q},
+};
 use legion::*;
 use rand::rand_core::utils::Word;
 use std::cell::RefMut;
@@ -73,7 +77,7 @@ pub enum PlayerAction {
     MoveTop,
     MoveDown,
     Shoot,
-    None,
+    Idle,
 }
 
 pub struct PlayerConfig {
@@ -168,9 +172,10 @@ pub fn spawn_player(
     let dir = Direction::Up;
     let pos = glm::vec2(50. + (900 * index) as f32, 100.);
     let size = 50_f32;
-    let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
+    let bsize = size * 0.9;
+    let bounds = Bounds::with_center_position(pos.x, pos.y, bsize, bsize);
 
-    Some(world.push((
+    let entity = world.push((
         Sprite::new(size, size, "tank.png"),
         Transform::with_direction(pos, dir.to_vec()),
         Collider2d::new(bounds),
@@ -178,7 +183,11 @@ pub fn spawn_player(
         Damagable::new(10),
         PlayerController::new(index, dir, config.get_input_component()),
         Gun::new(2),
-    )))
+    ));
+
+    let _ = quad_tree.place(world, entity);
+
+    Some(entity)
 }
 /*
 pub struct Player {
@@ -221,32 +230,38 @@ impl PlayerController {
         }
     }*/
 
-    fn update_state(&mut self, player_input: PlayerAction) {
-        self.direction = match player_input {
-            PlayerAction::MoveLeft => Direction::Left,
-            PlayerAction::MoveRight => Direction::Right,
-            PlayerAction::MoveTop => Direction::Up,
-            PlayerAction::MoveDown => Direction::Down,
-            PlayerAction::None | PlayerAction::Shoot => self.direction,
-        };
+    fn update_state(&mut self, player_input: Option<PlayerAction>) {
+        if let Some(player_input) = player_input {
+            self.direction = match player_input {
+                PlayerAction::MoveLeft => Direction::Left,
+                PlayerAction::MoveRight => Direction::Right,
+                PlayerAction::MoveTop => Direction::Up,
+                PlayerAction::MoveDown => Direction::Down,
+                PlayerAction::Idle | PlayerAction::Shoot => self.direction,
+            };
 
-        self.state = match player_input {
-            PlayerAction::MoveLeft
-            | PlayerAction::MoveRight
-            | PlayerAction::MoveTop
-            | PlayerAction::MoveDown => PlayerState::Move,
-            PlayerAction::Shoot => self.state,
-            _ => PlayerState::Idle,
-        };
+            self.state = match player_input {
+                PlayerAction::MoveLeft
+                | PlayerAction::MoveRight
+                | PlayerAction::MoveTop
+                | PlayerAction::MoveDown => PlayerState::Move,
+                PlayerAction::Shoot => self.state,
+                _ => PlayerState::Idle,
+            };
+        } else {
+            self.state = Idle;
+        }
 
-        println!("Current state {:?}", self.state);
+        //println!("Current state {:?}", self.state);
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {
-        if let Some(p) = self.input_layout.do_input(event) {
-            println!("do_input action {:?}", p);
-            self.update_state(p);
-        }
+        //if let Some(p) = self.input_layout.do_input(event) {
+        //    println!("do_input action {:?}", p);
+        //    self.update_state(p);
+        //} else {
+        //    self.update_state(PlayerAction::Idle);
+        //}
 
         //if let glfw::WindowEvent::Key(in_key, _, Action::Press, _) = event {
         //    if let Some(item) = self.input_layout.iter().find(|x| x.0 == *in_key) {
@@ -261,7 +276,10 @@ impl PlayerController {
         //}
     }
 
-    pub fn update_movable_state(&self, movable: &mut Movable) {
+    pub fn update_movable_state(&mut self, window: &glfw::Window, movable: &mut Movable) {
+        let action = self.input_layout.scan_input(window);
+        self.update_state(action);
+
         movable.set_direction(self.direction);
         let switch = match self.state {
             PlayerState::Move => MoveSwitch::Forward,

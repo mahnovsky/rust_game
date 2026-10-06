@@ -1,10 +1,10 @@
 use crate::bounds::Bounds;
 use crate::collider2d::Collider2d;
-use fxhash::{FxBuildHasher, FxHashMap, FxHashSet, FxHasher};
+use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use legion::*;
-use std::cell::{Cell, Ref, RefCell};
-use std::collections::{HashSet, VecDeque};
-use std::hash::Hash;
+use std::cell::Cell;
+use std::collections::VecDeque;
+use std::ops::{Index, IndexMut};
 
 const CHUNKS: usize = 4;
 const MAX_DEPTH: u32 = 3;
@@ -17,34 +17,40 @@ const fn pow(base: i32, deg: i32) -> i32 {
     base * pow(base, deg - 1)
 }
 
-const fn get_count(level: i32) -> usize {
+const fn get_count(level: i32) -> u8 {
     if level <= 0 {
         return 0;
     }
     let base = CHUNKS as i32;
-    pow(base, level) as usize + get_count(level - 1)
+    pow(base, level) as u8 + get_count(level - 1)
 }
-const MAX_NODE_COUNT: usize = get_count(MAX_DEPTH as i32);
+const MAX_NODE_COUNT_U8: u8 = get_count(MAX_DEPTH as i32);
+const MAX_NODE_COUNT: usize = MAX_NODE_COUNT_U8 as usize;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Handle {
-    index: usize,
+    index: u8,
 }
 
 impl Handle {
-    const INVALID: Self = Self { index: usize::MAX };
+    const INVALID: Self = Self { index: u8::MAX };
 
-    fn new(index: usize) -> Self {
+    fn new(index: u8) -> Self {
         Self { index }
+    }
+
+    fn as_index(&self) -> usize {
+        self.index as usize
     }
 }
 
-struct AreaNode {
+#[derive(Debug, Default)]
+pub struct AreaNode {
     handle: Handle,
     parent: Handle,
-    bounds: Bounds,
     children: Option<[Handle; CHUNKS]>,
+    bounds: Bounds,
     objects: FxHashSet<Entity>,
 }
 
@@ -74,29 +80,51 @@ impl AreaNode {
     }
 }
 
-pub struct CollisionSummary {
-    pub collide_ent: Option<Entity>,
-    pub can_move: bool,
+pub struct AreaMap<const N: usize>([AreaNode; N]);
+
+impl<const N: usize> AreaMap<N> {
+    pub fn get(&self, handle: Handle) -> Option<&AreaNode> {
+        self.0.get(handle.as_index())
+    }
+
+    pub fn get_mut(&mut self, handle: Handle) -> Option<&mut AreaNode> {
+        self.0.get_mut(handle.as_index())
+    }
+}
+
+impl<const N: usize> Default for AreaMap<N> {
+    fn default() -> Self {
+        Self(std::array::from_fn(|_| Default::default()))
+    }
+}
+
+impl<const N: usize> Index<Handle> for AreaMap<N> {
+    type Output = AreaNode;
+
+    fn index(&self, index: Handle) -> &Self::Output {
+        &self.0[index.as_index()]
+    }
+}
+
+impl<const N: usize> IndexMut<Handle> for AreaMap<N> {
+    fn index_mut(&mut self, index: Handle) -> &mut Self::Output {
+        &mut self.0[index.as_index()]
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Object {
-    ent: Entity,
-    bounds: Bounds,
-}
-
-impl Hash for Object {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.ent.hash(state);
-    }
+pub struct CollisionSummary {
+    pub collide_ent: Option<Entity>,
+    pub can_move: bool,
+    pub bounds: Bounds,
 }
 
 pub struct QuadTree {
     objects: FxHashMap<Entity, Collider2d>,
-    nodes: [Option<AreaNode>; MAX_NODE_COUNT],
-    tail: Cell<usize>,
+    nodes: AreaMap<MAX_NODE_COUNT>,
+    tail: Cell<u8>,
     bounds: Bounds,
-    root: Option<Handle>,
+    root: Handle,
 }
 
 #[allow(dead_code)]
@@ -104,10 +132,10 @@ impl QuadTree {
     pub fn new(bounds: Bounds) -> Self {
         Self {
             objects: FxHashMap::with_hasher(FxBuildHasher::new()),
-            nodes: std::array::from_fn(|_| None),
+            nodes: Default::default(),
             tail: Cell::new(0),
             bounds,
-            root: None,
+            root: Default::default(),
         }
         .build_tree()
     }
@@ -118,7 +146,7 @@ impl QuadTree {
 
     fn insert(&mut self, handle: Handle, node: AreaNode) {
         assert!(handle.index < self.tail.get());
-        self.nodes[handle.index] = Some(node);
+        self.nodes[handle] = node;
     }
 
     fn create_node(&mut self, parent: Handle, depth: u32, bounds: Bounds) -> Handle {
@@ -167,7 +195,7 @@ impl QuadTree {
     }
 
     fn build_tree(mut self) -> Self {
-        self.root = Some(self.create_node(Handle::INVALID, 0, self.bounds.clone()));
+        self.root = self.create_node(Handle::INVALID, 0, self.bounds);
 
         self
     }
@@ -177,29 +205,28 @@ impl QuadTree {
         handle: Handle,
         f: impl Fn(Option<&AreaNode>) -> bool,
     ) -> Option<Handle> {
-        if let Some(Some(node)) = self.nodes.get(handle.index) {
-            if let Some(children) = node.children.as_ref() {
+        std::debug_assert!(handle.as_index() < MAX_NODE_COUNT);
+        if let Some(node) = self.nodes.get(handle) {
+            if let Some(children) = node.children {
                 for child_handle in children {
-                    if child_handle.index < self.nodes.len() {
-                        let child = self.nodes.get(child_handle.index).unwrap();
+                    let child = self.nodes.get(child_handle);
 
-                        if f(child.as_ref()) {
-                            return Some(*child_handle);
-                        }
+                    if f(child) {
+                        return Some(child_handle);
                     }
                 }
             }
         }
+
         None
     }
 
     fn get_place_node(&self, bounds: &Bounds) -> Option<Handle> {
-        let nodes_count = self.nodes.len();
-        let mut next_handle = self.root;
+        let mut next_handle = Some(self.root);
         let mut prev_handle = next_handle;
         while let Some(handle) = next_handle {
-            if handle.index < nodes_count {
-                let node = self.nodes[handle.index].as_ref().unwrap();
+            if handle.index < MAX_NODE_COUNT_U8 {
+                let node = &self.nodes[handle];
 
                 next_handle = node.find_last(self, bounds);
                 if next_handle == prev_handle {
@@ -215,32 +242,30 @@ impl QuadTree {
     }
 
     pub fn on_entity_removed(&mut self, id: Entity) {
-        let handle = self.find_child_node_if(self.root.unwrap(), |node| {
+        let handle = self.find_child_node_if(self.root, |node| {
             if let Some(node) = node {
                 return node.objects.contains(&id);
             }
             false
         });
         if let Some(handle) = handle {
-            if let Some(node) = &mut self.nodes[handle.index] {
-                node.remove_object(id);
-            }
+            self.nodes[handle].remove_object(id);
         }
     }
 
     pub fn can_place(&self, world: &World, bounds: &Bounds) -> bool {
-        if let Some(id) = self.get_collision(None, None, &bounds) {
+        if let Some(id) = self.get_collision(None, None, bounds) {
             return false;
         }
         true
     }
 
-    pub fn place(&self, world: &mut World, entity: Entity) -> bool {
-        let Some(entry) = world.entry(entity) else {
+    pub fn place(&mut self, world: &mut World, entity: Entity) -> bool {
+        let Some(ref mut entry) = world.entry(entity) else {
             return false;
         };
 
-        let Ok(collider) = entry.get_component::<Collider2d>() else {
+        let Ok(collider) = entry.get_component_mut::<Collider2d>() else {
             return false;
         };
 
@@ -249,22 +274,14 @@ impl QuadTree {
             return false;
         }
 
-        let handle = self.get_place_node(&bounds);
-
-        if let Some(handle) = handle {
-            let node = self.nodes[handle.index].as_ref().unwrap();
-
-            /*node.insert_object(entity);
-            entity.visit::<Collider2d>(|collider| {
-                if let Some(collider) = collider {
-                    collider.set_area_handle(Some(handle));
-                }
-            });*/
+        if let Some(handle) = self.get_place_node(&bounds) {
+            self.nodes[handle].insert_object(entity);
+            collider.set_area_handle(Some(handle));
 
             return true;
         }
 
-        return false;
+        false
     }
 
     fn get_collision(
@@ -273,13 +290,12 @@ impl QuadTree {
         ignored: Option<&[Entity]>,
         bounds: &Bounds,
     ) -> Option<Entity> {
-        let nodes_count = self.nodes.len();
-        let mut next_handle = self.root;
+        let mut next_handle = Some(self.root);
         let mut check_nodes = VecDeque::new();
 
         while let Some(handle) = next_handle {
-            if handle.index < nodes_count {
-                let node = self.nodes[handle.index].as_ref().unwrap();
+            if handle.index < MAX_NODE_COUNT_U8 {
+                let node = &self.nodes[handle];
                 let iter = node.objects.iter().filter(|e| {
                     let s = entity_id.iter().any(|ent| *ent == **e);
                     if let Some(ignore) = ignored.as_ref().map(|x| x.contains(e)) {
@@ -300,7 +316,7 @@ impl QuadTree {
                 }
                 if let Some(node_children) = node.children {
                     for child_handle in node_children {
-                        let node = self.nodes[child_handle.index].as_ref().unwrap();
+                        let node = &self.nodes[child_handle];
                         if node.bounds.has_collision(bounds) {
                             check_nodes.push_back(child_handle);
                         }
@@ -316,8 +332,13 @@ impl QuadTree {
         None
     }
 
-    pub fn move_object(&mut self, entity: Entity, new_pos: glm::Vec2) -> Option<CollisionSummary> {
-        let mut collider = self.objects.get(&entity)?.clone();
+    pub fn move_object(
+        &mut self,
+        entity: Entity,
+        new_pos: glm::Vec2,
+        collider: &mut Collider2d,
+    ) -> CollisionSummary {
+        //let mut collider = self.objects.get(&entity)?.clone();
         let mut bounds = collider.get_bounds();
         bounds.set_center_position(new_pos.x, new_pos.y);
 
@@ -327,36 +348,42 @@ impl QuadTree {
             let collide_ent = self.get_collision(Some(entity), None, &bounds);
 
             if collide_ent.is_some() {
-                return Some(CollisionSummary {
+                return CollisionSummary {
                     collide_ent,
                     can_move: false,
-                });
+                    bounds,
+                };
             }
             if let Some(old_handle) = collider.get_area_handle() {
                 if old_handle != handle {
-                    let node = self.nodes[handle.index].as_mut().unwrap();
-                    node.insert_object(entity);
-                    if let Some(node) = &mut self.nodes[old_handle.index] {
-                        node.remove_object(entity);
-                    }
+                    self.nodes[old_handle].remove_object(entity);
+
+                    self.nodes[handle].insert_object(entity);
                 }
             }
 
             collider.set_position(new_pos.x, new_pos.y);
             collider.set_reached_border(false);
             collider.set_area_handle(Some(handle));
+            *self.objects.entry(entity).or_default() = collider.clone();
 
-            return Some(CollisionSummary {
+            return CollisionSummary {
                 collide_ent: None,
                 can_move: true,
-            });
+                bounds,
+            };
         }
 
         collider.set_reached_border(true);
+        self.objects
+            .entry(entity)
+            .or_default()
+            .set_reached_border(true);
 
-        Some(CollisionSummary {
+        CollisionSummary {
             collide_ent: None,
             can_move: false,
-        })
+            bounds,
+        }
     }
 }

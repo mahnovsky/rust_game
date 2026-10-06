@@ -18,10 +18,13 @@ use crate::{
     transform::Transform,
 };
 use fxhash::FxHashMap;
-use glfw::{Action, Key};
+use glfw::{
+    Action::{self, Release},
+    Key, Window,
+};
 use legion::*;
 use rand::rngs::ThreadRng;
-use std::ops::Deref;
+use std::{io::Repeat, ops::Deref};
 
 #[derive(Debug, Clone)]
 pub struct InputLayoutComponent {
@@ -39,6 +42,17 @@ impl InputLayoutComponent {
         if let glfw::WindowEvent::Key(in_key, _, action, _) = event {
             return self.key_actions.get(in_key).cloned();
         }
+        None
+    }
+
+    pub fn scan_input(&self, window: &Window) -> Option<PlayerAction> {
+        for (k, v) in self.key_actions.iter() {
+            match window.get_key(*k) {
+                Action::Press => return Some(*v),
+                Action::Release | Action::Repeat => {}
+            }
+        }
+
         None
     }
 }
@@ -85,21 +99,21 @@ impl Game {
         }*/
     }
 
-    fn update_players(&mut self) {
-        let mut query = <(&PlayerController, &mut Movable)>::query();
+    fn update_players(&mut self, window: &Window) {
+        let mut query = <(&mut PlayerController, &mut Movable)>::query();
 
         for (pc, movable) in query.iter_mut(&mut self.world) {
-            pc.update_movable_state(movable);
+            pc.update_movable_state(window, movable);
         }
     }
 
-    pub fn update(&mut self, dt: f32) {
+    pub fn update(&mut self, window: &glfw::Window, dt: f32) {
         //self.map.update(&self.world);
         /*for s in self.systems.iter_mut() {
             s.update(&self.world, dt);
         }*/
 
-        self.update_players();
+        self.update_players(window);
         move_system::move_update(&mut self.world, &mut self.quad_tree, dt);
 
         self.bullet_system_update(dt);

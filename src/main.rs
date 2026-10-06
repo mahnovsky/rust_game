@@ -18,7 +18,7 @@ extern crate core;
 extern crate nalgebra_glm as glm;
 
 use glfw::{Action, Context, Key, OpenGlProfileHint, WindowHint};
-use std::{ptr::null, time::SystemTime};
+use std::{ops::Deref, ptr::null, time::SystemTime};
 
 use crate::game::Game;
 
@@ -88,7 +88,7 @@ fn main() {
             gl::Clear(gl::COLOR_BUFFER_BIT);
         }
 
-        game.update(delta as f32);
+        game.update(window.deref(), delta as f32);
         game.do_draw(&mut render);
 
         window.swap_buffers();

@@ -16,5 +16,6 @@ strum = "0.28.0"
 strum_macros = "0.28.0"
 fxhash="0.2.1"
 legion="0.4.0"
+generational-arena = { version = "0.2", features = ["serde"] }
 #ecs = { path="./crates/ecs" }
 #ecs_derive = { path="./crates/ecs/ecs_derive" }

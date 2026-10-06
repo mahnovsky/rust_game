@@ -7,7 +7,7 @@ pub enum CollisionEvent {
     OnBorder,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Collider2d {
     bounds: Bounds,
     area_handle: Option<Handle>,
@@ -46,7 +46,7 @@ impl Collider2d {
     }
 
     pub fn get_bounds(&self) -> Bounds {
-        self.bounds.clone()
+        self.bounds
     }
 
     pub fn is_reached_border(&self) -> bool {

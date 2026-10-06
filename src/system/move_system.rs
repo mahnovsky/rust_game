@@ -20,18 +20,24 @@ impl MoveSystem {
 }
 
 pub fn move_update(world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
-    let mut query = <(Entity, &Movable, &mut Transform)>::query();
+    let mut query = <(Entity, &Movable, &mut Transform, &mut Collider2d)>::query();
 
     //let mut move_list = Vec::<(&mut Transform, glm::Vec2)>::new();
 
-    for (entity, movable, transform) in query.iter_mut(world) {
+    for (entity, movable, transform, collider) in query.iter_mut(world) {
         let move_delta = movable.get_move_fragment(delta);
 
         let pos = transform.get_position();
         let new_pos = pos + move_delta;
 
+        let summary = quad_tree.move_object(*entity, new_pos, collider);
+
+        //println!("Summ {:?}", summary);
+        if summary.can_move {
+            transform.set_position(&new_pos);
+        }
         transform.set_direction(movable.get_direction_vec());
-        quad_tree.move_object(*entity, new_pos);
+
         //println!("move system update {:?}", movable.get_direction_vec());
         //let Some(summary) = quad_tree.move_object(&world, *entity, new_pos) else {
         //    return;
