@@ -32,10 +32,11 @@ pub fn move_update(world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
 
         let summary = quad_tree.move_object(*entity, new_pos, collider);
 
-        //println!("Summ {:?}", summary);
         if summary.can_move {
             transform.set_position(&new_pos);
-        }
+        } //else {
+          //    println!("Cant move {:?}", summary);
+          //}
         transform.set_direction(movable.get_direction_vec());
 
         //println!("move system update {:?}", movable.get_direction_vec());

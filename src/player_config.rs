@@ -2,18 +2,23 @@ use crate::{
     bounds::Bounds,
     collider2d::Collider2d,
     game::InputLayoutComponent,
-    object_components::{Bullet, Damagable, Direction, Gun, Lifetime, Movable, MoveSwitch},
-    player_config::PlayerState::Idle,
+    object_components::{
+        Bullet, Damagable, Direction, Gun, Lifetime, Movable,
+        MoveSwitch::{self, Stay},
+    },
+    player_config::{PlayerAction::Shoot, PlayerState::Idle},
     quad_tree::QuadTree,
     render::Render,
     sprite::Sprite,
-    transform::Transform,
+    transform::{self, Transform},
 };
 use fxhash::FxHashMap;
 use glfw::{
     Action,
     Key::{self, Q},
+    Window,
 };
+use glm::modf_vec;
 use legion::*;
 use rand::rand_core::utils::Word;
 use std::cell::RefMut;
@@ -179,7 +184,7 @@ pub fn spawn_player(
         Sprite::new(size, size, "tank.png"),
         Transform::with_direction(pos, dir.to_vec()),
         Collider2d::new(bounds),
-        Movable::new(200, dir),
+        Movable::new(200, dir, Stay),
         Damagable::new(10),
         PlayerController::new(index, dir, config.get_input_component()),
         Gun::new(2),
@@ -232,6 +237,7 @@ impl PlayerController {
 
     fn update_state(&mut self, player_input: Option<PlayerAction>) {
         if let Some(player_input) = player_input {
+            println!("Input {:?}", player_input);
             self.direction = match player_input {
                 PlayerAction::MoveLeft => Direction::Left,
                 PlayerAction::MoveRight => Direction::Right,
@@ -251,8 +257,9 @@ impl PlayerController {
         } else {
             self.state = Idle;
         }
-
-        //println!("Current state {:?}", self.state);
+        if self.state != Idle {
+            println!("Current state {:?}", self.state);
+        }
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {
@@ -276,9 +283,24 @@ impl PlayerController {
         //}
     }
 
-    pub fn update_movable_state(&mut self, window: &glfw::Window, movable: &mut Movable) {
+    pub fn update(
+        &mut self,
+        window: &glfw::Window,
+        ent: Entity,
+        movable: &mut Movable,
+        gun: &mut Gun,
+        transform: &Transform,
+    ) {
         let action = self.input_layout.scan_input(window);
         self.update_state(action);
+
+        if let Some(action) = action {
+            if action == Shoot && gun.can_spawn_bullet() {
+                let pos = transform.get_position();
+                let dir = movable.get_direction();
+                gun.setup_shoot(ent, pos, dir);
+            }
+        }
 
         movable.set_direction(self.direction);
         let switch = match self.state {
@@ -286,5 +308,19 @@ impl PlayerController {
             PlayerState::Idle => MoveSwitch::Stay,
         };
         movable.set_move_switch(switch);
+    }
+}
+
+pub fn update_players(world: &mut World, window: &Window) {
+    let mut query = <(
+        Entity,
+        &mut PlayerController,
+        &mut Movable,
+        &mut Gun,
+        &Transform,
+    )>::query();
+
+    for (ent, pc, movable, gun, tr) in query.iter_mut(world) {
+        pc.update(window, *ent, movable, gun, tr);
     }
 }

@@ -6,14 +6,13 @@ use crate::{
     collider2d::{Collider2d, CollisionEvent},
     map::Map,
     object_components::{Bullet, Damagable, Gun, Lifetime, Movable},
-    player_config::{spawn_player, PlayerAction, PlayerController, PlayerState},
+    player_config::{self, spawn_player, PlayerAction, PlayerController, PlayerState},
     quad_tree::QuadTree,
     render::{Drawable, Render},
     sprite::Sprite,
     system::{
-        ai_system::AiSystem,
-        fire_system::FireSystem,
-        move_system::{self, MoveSystem},
+        ai_system::{self, AiSystem},
+        fire_system, move_system,
     },
     transform::Transform,
 };
@@ -22,7 +21,7 @@ use glfw::{
     Action::{self, Release},
     Key, Window,
 };
-use legion::*;
+use legion::{systems::CommandBuffer, *};
 use rand::rngs::ThreadRng;
 use std::{io::Repeat, ops::Deref};
 
@@ -48,7 +47,10 @@ impl InputLayoutComponent {
     pub fn scan_input(&self, window: &Window) -> Option<PlayerAction> {
         for (k, v) in self.key_actions.iter() {
             match window.get_key(*k) {
-                Action::Press => return Some(*v),
+                Action::Press => {
+                    println!("{:?} ", v);
+                    return Some(*v);
+                }
                 Action::Release | Action::Repeat => {}
             }
         }
@@ -63,6 +65,8 @@ pub struct Game {
     map: Map,
     frame_counter: u32,
     quad_tree: QuadTree,
+    res: Resources,
+    ai_controller: ai_system::AiSystem,
 }
 
 impl Game {
@@ -73,6 +77,8 @@ impl Game {
             map: Map::new(width, height),
             frame_counter: 0,
             quad_tree: QuadTree::new(Bounds::new(0_f32, 0_f32, width as f32, height as f32)),
+            res: Resources::default(),
+            ai_controller: AiSystem::new(),
         }
     }
 
@@ -83,43 +89,31 @@ impl Game {
         println!("fn init {:?}", p1);
     }
 
-    fn bullet_system_update(&self, dt: f32) {
-        /*if ecs.is_componet_exist::<Bullet>() {
-            ecs.visit_all3::<Lifetime, Movable, Collider2d>(|lifetime, movable, collider| {
-                lifetime.update(dt);
-
-                if collider.is_reached_border() || lifetime.is_time_out() {
-                    if let Some(entity) = collider.entity.upgrade() {
-                        ecs.remove_entity(entity.get_id());
-                    }
-                } else {
-                    movable.set_dirty(true);
-                }
-            });
-        }*/
-    }
-
-    fn update_players(&mut self, window: &Window) {
-        let mut query = <(&mut PlayerController, &mut Movable)>::query();
-
-        for (pc, movable) in query.iter_mut(&mut self.world) {
-            pc.update_movable_state(window, movable);
+    fn update_lifetimes(&mut self, dt: f32) {
+        let mut query = <&mut Lifetime>::query();
+        for lt in query.iter_mut(&mut self.world) {
+            lt.update(dt);
         }
     }
 
     pub fn update(&mut self, window: &glfw::Window, dt: f32) {
-        //self.map.update(&self.world);
-        /*for s in self.systems.iter_mut() {
-            s.update(&self.world, dt);
-        }*/
+        let mut cb = CommandBuffer::new(&self.world);
 
-        self.update_players(window);
+        self.update_lifetimes(dt);
+        ai_system::update(
+            &mut self.ai_controller,
+            &mut self.world,
+            &mut self.quad_tree,
+            dt,
+        );
+        player_config::update_players(&mut self.world, window);
         move_system::move_update(&mut self.world, &mut self.quad_tree, dt);
+        fire_system::update(&mut self.world, &mut cb, dt);
 
-        self.bullet_system_update(dt);
-        //self.fire_system.update(&self.world, dt);
-        //self.move_system_update(dt);
-        //ecs.process_self_events();
+        if !cb.is_empty() {
+            cb.flush(&mut self.world, &mut self.res);
+        }
+
         self.frame_counter += 1;
     }
 

@@ -2,13 +2,14 @@
 use crate::{
     bounds::Bounds,
     collider2d::Collider2d,
-    object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable},
-    quad_tree::{self, QuadTree},
+    object_components::{
+        Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable, MoveSwitch::Stay,
+    },
+    quad_tree::QuadTree,
     sprite::Sprite,
     transform::Transform,
 };
 use legion::*;
-use std::{cell::RefCell, rc::Rc};
 
 enum AiCommand {
     ChangeDir,
@@ -65,7 +66,6 @@ impl SpawnPoint {
 }
 
 pub struct AiSystem {
-    //quad_tree: Rc<RefCell<QuadTree>>,
     spawn_points: Vec<SpawnPoint>,
 }
 
@@ -88,7 +88,7 @@ impl AiSystem {
                 Sprite::new(size, size, "tank.png"),
                 Transform::with_direction(pos, dir),
                 Collider2d::new(bounds),
-                Movable::new(200, crate::object_components::Direction::Down),
+                Movable::new(200, crate::object_components::Direction::Down, Stay),
                 Damagable::new(10),
                 AiController::new(dir),
                 Gun::new(2),
@@ -102,7 +102,7 @@ impl AiSystem {
 
     fn spawn_bonus(&mut self, world: &mut World) {}
 
-    fn spawn_items(&mut self, world: &mut World, delta: f32) {
+    fn spawn_items(&mut self, world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
         let mut spawn_items = Vec::<(SpawnItem, glm::Vec2)>::new();
         for sp in self.spawn_points.iter_mut() {
             sp.update(delta);
@@ -114,13 +114,13 @@ impl AiSystem {
 
         while let Some(item) = spawn_items.pop() {
             match item.0 {
-                SpawnItem::Tank => {} //self.spawn_tank(world, item.1),
+                SpawnItem::Tank => self.spawn_tank(world, quad_tree, item.1),
                 SpawnItem::Bonus => self.spawn_bonus(world),
             }
         }
     }
 }
 
-fn update(ai: &mut AiSystem, world: &mut World, delta: f32) {
-    ai.spawn_items(world, delta);
+pub fn update(ai: &mut AiSystem, world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
+    ai.spawn_items(world, quad_tree, delta);
 }

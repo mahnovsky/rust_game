@@ -55,10 +55,10 @@ pub struct Movable {
 }
 
 impl Movable {
-    pub fn new(max_speed: u16, direction: Direction) -> Self {
+    pub fn new(max_speed: u16, direction: Direction, move_switch: MoveSwitch) -> Self {
         Self {
             max_speed,
-            move_switch: Stay,
+            move_switch,
             direction,
         }
     }
@@ -69,6 +69,10 @@ impl Movable {
 
     pub fn get_direction_vec(&self) -> Vec2 {
         self.direction.to_vec()
+    }
+
+    pub fn get_direction(&self) -> Direction {
+        self.direction
     }
 
     pub fn set_direction(&mut self, dir: Direction) {
@@ -85,11 +89,11 @@ pub struct BulletSpawner {
     pub owner_id: Entity,
     pub damage: u32,
     pub pos: glm::Vec2,
-    pub dir: glm::Vec2,
+    pub dir: Direction,
 }
 
 impl BulletSpawner {
-    fn new(owner_id: Entity, damage: u32, pos: glm::Vec2, dir: glm::Vec2) -> Self {
+    fn new(owner_id: Entity, damage: u32, pos: glm::Vec2, dir: Direction) -> Self {
         Self {
             owner_id,
             damage,
@@ -140,6 +144,15 @@ impl Gun {
             self.timer = 0.;
         }
         self.spawner.take()
+    }
+
+    pub fn setup_shoot(&mut self, owner_id: Entity, pos: Vec2, dir: Direction) {
+        self.spawner = Some(BulletSpawner {
+            owner_id,
+            damage: self.damage,
+            pos,
+            dir,
+        });
     }
 }
 /*

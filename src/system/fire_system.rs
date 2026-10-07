@@ -1,46 +1,24 @@
-use legion::*;
-use std::cell::RefCell;
+use legion::{systems::CommandBuffer, *};
 
 use crate::{
     bounds::Bounds,
     collider2d::Collider2d,
-    object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable},
+    object_components::{Bullet, Damagable, Gun, Lifetime, Movable, MoveSwitch},
     sprite::Sprite,
     transform::Transform,
 };
 
-pub struct FireSystem {
-    spawners: Vec<BulletSpawner>,
-}
-
-impl FireSystem {
-    pub fn new() -> Self {
-        Self {
-            spawners: Vec::new(),
-        }
-    }
-
-    fn update_guns(&mut self, world: &mut World, delta: f32) {
-        let mut query = <(Entity, &mut Gun, &Transform)>::query();
-        for (entity, gun, transform) in query.iter_mut(world) {
-            gun.update_timer(delta);
-            let Some(spawner) = gun.consume_spawner() else {
-                continue;
-            };
-            self.spawners.push(spawner);
-
-            let direction = transform.get_direction();
-        }
-    }
-
-    fn spawn_bullets(&mut self, world: &mut World) {
-        while let Some(spawner) = self.spawners.pop() {
-            let direction = glm::vec2(0., 0.); //tr_owner.get_direction();
-            let pos = spawner.pos + spawner.dir * 30.;
-            world.push((
+fn update_bullet_spawns(world: &mut World, cb: &mut CommandBuffer, delta: f32) {
+    let mut query = <(Entity, &mut Gun, &Transform, &Movable)>::query();
+    for (entity, gun, transform, mv) in query.iter_mut(world) {
+        gun.update_timer(delta);
+        if let Some(spawner) = gun.consume_spawner() {
+            let dir = spawner.dir;
+            let pos = spawner.pos + spawner.dir.to_vec() * 30.;
+            cb.push((
                 Bullet::new(spawner.owner_id, spawner.damage),
-                Transform::with_direction(pos, spawner.dir),
-                Movable::new(300, crate::object_components::Direction::Down),
+                Transform::with_direction(pos, dir.to_vec()),
+                Movable::new(300, dir, MoveSwitch::Forward),
                 Collider2d::with_ignore(
                     Bounds::with_center_position(pos.x, pos.y, 10., 10.),
                     vec![spawner.owner_id],
@@ -51,32 +29,19 @@ impl FireSystem {
             ));
         }
     }
+}
 
-    fn apply_damage(&self, world: &World) {
-        /*static mut DAMAGE_TARGETS: Vec<(u32, Entity)> = Vec::new();
-        ecs.visit_all::<Bullet>(|bullet| {
-            if let Some(target) = bullet.consume_target() {
-                unsafe { DAMAGE_TARGETS.push((bullet.get_damage(), target)) };
-                bullet.entity.upgrade().unwrap().kill();
-            }
-        });
-
-        unsafe {
-            while let Some(info) = DAMAGE_TARGETS.pop() {
-                ecs.visit::<Damagable>(info.1, |damagable| {
-                    if let Some(damagable) = damagable {
-                        damagable.do_damage(info.0);
-                    }
-                });
-            }
-        }*/
+fn update_bullet_collisions(world: &mut World, cb: &mut CommandBuffer, delta: f32) {
+    let mut query = <(Entity, &Collider2d, &Bullet, &Lifetime)>::query();
+    for (entity, collider, bullet, lt) in query.iter(world) {
+        if collider.is_reached_border() || lt.is_time_out() {
+            cb.remove(*entity);
+        }
     }
 }
 
-pub fn update(fs: &mut FireSystem, world: &mut World, delta: f32) {
-    fs.update_guns(world, delta);
+pub fn update(world: &mut World, cb: &mut CommandBuffer, delta: f32) {
+    update_bullet_spawns(world, cb, delta);
 
-    fs.spawn_bullets(world);
-
-    fs.apply_damage(world);
+    update_bullet_collisions(world, cb, delta);
 }
