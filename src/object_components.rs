@@ -39,8 +39,8 @@ pub enum MoveSwitch {
 }
 
 impl MoveSwitch {
-    fn to_scalar(&self) -> f32 {
-        match *self {
+    fn to_scalar(self) -> f32 {
+        match self {
             Self::Stay => 0_f32,
             Self::Forward => 1_f32,
         }

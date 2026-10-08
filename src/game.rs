@@ -47,10 +47,7 @@ impl InputLayoutComponent {
     pub fn scan_input(&self, window: &Window) -> Option<PlayerAction> {
         for (k, v) in self.key_actions.iter() {
             match window.get_key(*k) {
-                Action::Press => {
-                    println!("{:?} ", v);
-                    return Some(*v);
-                }
+                Action::Press => return Some(*v),
                 Action::Release | Action::Repeat => {}
             }
         }
@@ -107,8 +104,8 @@ impl Game {
             dt,
         );
         player_config::update_players(&mut self.world, window);
-        move_system::move_update(&mut self.world, &mut self.quad_tree, dt);
-        fire_system::update(&mut self.world, &mut cb, dt);
+        let collisions = move_system::move_update(&mut self.world, &mut self.quad_tree, dt);
+        fire_system::update(&mut self.world, &mut self.quad_tree, &mut cb, dt);
 
         if !cb.is_empty() {
             cb.flush(&mut self.world, &mut self.res);

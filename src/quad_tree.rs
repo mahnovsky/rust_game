@@ -5,6 +5,7 @@ use legion::*;
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
+use std::thread::Thread;
 
 const CHUNKS: usize = 4;
 const MAX_DEPTH: u32 = 3;
@@ -26,6 +27,13 @@ const fn get_count(level: i32) -> u8 {
 }
 const MAX_NODE_COUNT_U8: u8 = get_count(MAX_DEPTH as i32);
 const MAX_NODE_COUNT: usize = MAX_NODE_COUNT_U8 as usize;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct TreeId(usize);
+
+impl TreeId {
+    pub const INVALID: Self = Self(usize::MAX);
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -51,7 +59,7 @@ pub struct AreaNode {
     parent: Handle,
     children: Option<[Handle; CHUNKS]>,
     bounds: Bounds,
-    objects: FxHashSet<Entity>,
+    objects: FxHashSet<TreeId>,
 }
 
 impl AreaNode {
@@ -69,12 +77,12 @@ impl AreaNode {
         None
     }
 
-    fn insert_object(&mut self, object_id: Entity) {
+    fn insert_object(&mut self, object_id: TreeId) {
         println!("Object {:?} enter area {:?}", object_id, self.handle.index);
         self.objects.insert(object_id);
     }
 
-    fn remove_object(&mut self, object_id: Entity) {
+    fn remove_object(&mut self, object_id: TreeId) {
         println!("Object {:?} leave area {:?}", object_id, self.handle.index);
         self.objects.remove(&object_id);
     }
@@ -112,15 +120,15 @@ impl<const N: usize> IndexMut<Handle> for AreaMap<N> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct CollisionSummary {
-    pub collide_ent: Option<Entity>,
+#[derive(Debug, Clone)]
+pub struct CollisionEvent {
+    pub collisions: Vec<TreeId>,
     pub can_move: bool,
     pub bounds: Bounds,
 }
 
 pub struct QuadTree {
-    objects: FxHashMap<Entity, Collider2d>,
+    objects: Vec<Collider2d>,
     nodes: AreaMap<MAX_NODE_COUNT>,
     tail: Cell<u8>,
     bounds: Bounds,
@@ -131,7 +139,7 @@ pub struct QuadTree {
 impl QuadTree {
     pub fn new(bounds: Bounds) -> Self {
         Self {
-            objects: FxHashMap::with_hasher(FxBuildHasher::new()),
+            objects: Vec::new(),
             nodes: Default::default(),
             tail: Cell::new(0),
             bounds,
@@ -206,14 +214,14 @@ impl QuadTree {
         f: impl Fn(Option<&AreaNode>) -> bool,
     ) -> Option<Handle> {
         std::debug_assert!(handle.as_index() < MAX_NODE_COUNT);
-        if let Some(node) = self.nodes.get(handle) {
-            if let Some(children) = node.children {
-                for child_handle in children {
-                    let child = self.nodes.get(child_handle);
+        let node = self.nodes.get(handle)?;
 
-                    if f(child) {
-                        return Some(child_handle);
-                    }
+        if let Some(children) = node.children {
+            for child_handle in children {
+                let child = self.nodes.get(child_handle);
+
+                if f(child) {
+                    return Some(child_handle);
                 }
             }
         }
@@ -225,23 +233,19 @@ impl QuadTree {
         let mut next_handle = Some(self.root);
         let mut prev_handle = next_handle;
         while let Some(handle) = next_handle {
-            if handle.index < MAX_NODE_COUNT_U8 {
-                let node = &self.nodes[handle];
+            let node = &self.nodes[handle];
 
-                next_handle = node.find_last(self, bounds);
-                if next_handle == prev_handle {
-                    break;
-                }
-                prev_handle = next_handle;
-            } else {
+            next_handle = node.find_last(self, bounds);
+            if next_handle == prev_handle {
                 break;
             }
+            prev_handle = next_handle;
         }
 
         prev_handle
     }
 
-    pub fn on_entity_removed(&mut self, id: Entity) {
+    pub fn on_entity_removed(&mut self, id: TreeId) {
         let handle = self.find_child_node_if(self.root, |node| {
             if let Some(node) = node {
                 return node.objects.contains(&id);
@@ -253,29 +257,29 @@ impl QuadTree {
         }
     }
 
-    pub fn can_place(&self, world: &World, bounds: &Bounds) -> bool {
-        if let Some(id) = self.get_collision(None, None, bounds) {
-            return false;
-        }
-        true
+    fn add_new_object(&mut self, collider: &mut Collider2d) -> TreeId {
+        let id = TreeId(self.objects.len());
+
+        collider.set_tree_id(id);
+        self.objects.push(collider.clone());
+
+        id
     }
 
-    pub fn place(&mut self, world: &mut World, entity: Entity) -> bool {
-        let Some(ref mut entry) = world.entry(entity) else {
-            return false;
-        };
+    pub fn can_place(&self, world: &World, bounds: &Bounds) -> bool {
+        let mut collisions = Vec::new();
+        !self.find_collisions(&[], bounds, &mut collisions)
+    }
 
-        let Ok(collider) = entry.get_component_mut::<Collider2d>() else {
-            return false;
-        };
-
+    pub fn place(&mut self, collider: &mut Collider2d) -> bool {
         let bounds = collider.get_bounds();
-        if let Some(id) = self.get_collision(Some(entity), None, &bounds) {
-            return false;
-        }
+        let mut collisions = Vec::new();
+        self.find_collisions(&[], &bounds, &mut collisions);
 
         if let Some(handle) = self.get_place_node(&bounds) {
-            self.nodes[handle].insert_object(entity);
+            let id = self.add_new_object(collider);
+
+            self.nodes[handle].insert_object(id);
             collider.set_area_handle(Some(handle));
 
             return true;
@@ -284,52 +288,43 @@ impl QuadTree {
         false
     }
 
-    fn get_collision(
+    fn find_collisions(
         &self,
-        entity_id: Option<Entity>,
-        ignored: Option<&[Entity]>,
+        ignored: &[TreeId],
         bounds: &Bounds,
-    ) -> Option<Entity> {
+        collisions: &mut Vec<TreeId>,
+    ) -> bool {
         let mut next_handle = Some(self.root);
         let mut check_nodes = VecDeque::new();
-
+        let collisions_before = collisions.len();
         while let Some(handle) = next_handle {
-            if handle.index < MAX_NODE_COUNT_U8 {
-                let node = &self.nodes[handle];
-                let iter = node.objects.iter().filter(|e| {
-                    let s = entity_id.iter().any(|ent| *ent == **e);
-                    if let Some(ignore) = ignored.as_ref().map(|x| x.contains(e)) {
-                        return !ignore && !s;
-                    };
+            let node = &self.nodes[handle];
+            let found_collision: Vec<TreeId> = node
+                .objects
+                .iter()
+                .filter(|e| !ignored.contains(e))
+                .filter_map(|id| self.objects.get(id.0).map(|x| (id, x)))
+                .filter(|(id, x)| {
+                    //bounds.has_collision(&x.get_bounds())
+                    x.get_bounds().has_collision(bounds)
+                })
+                .map(|(id, _)| *id)
+                .collect();
 
-                    !s
-                });
+            collisions.extend(found_collision);
 
-                for ent in iter {
-                    let Some(collider) = self.objects.get(ent) else {
-                        continue;
-                    };
-
-                    if collider.get_bounds().has_collision(bounds) {
-                        return Some(*ent);
+            if let Some(node_children) = node.children {
+                for child_handle in node_children {
+                    let node = &self.nodes[child_handle];
+                    if node.bounds.has_collision(bounds) {
+                        check_nodes.push_back(child_handle);
                     }
                 }
-                if let Some(node_children) = node.children {
-                    for child_handle in node_children {
-                        let node = &self.nodes[child_handle];
-                        if node.bounds.has_collision(bounds) {
-                            check_nodes.push_back(child_handle);
-                        }
-                    }
-                }
-
-                next_handle = check_nodes.pop_front();
-            } else {
-                break;
             }
-        }
 
-        None
+            next_handle = check_nodes.pop_front();
+        }
+        collisions.len() > collisions_before
     }
 
     pub fn move_object(
@@ -337,51 +332,51 @@ impl QuadTree {
         entity: Entity,
         new_pos: glm::Vec2,
         collider: &mut Collider2d,
-    ) -> CollisionSummary {
-        //let mut collider = self.objects.get(&entity)?.clone();
+    ) -> CollisionEvent {
+        assert!(collider.get_tree_id() != TreeId::INVALID);
+        let id = collider.get_tree_id();
         let mut bounds = collider.get_bounds();
         bounds.set_center_position(new_pos.x, new_pos.y);
 
         let handle = self.get_place_node(&bounds);
 
+        let mut collisions = Vec::new();
         if let Some(handle) = handle {
-            let collide_ent = self.get_collision(Some(entity), None, &bounds);
+            let has_collision = self.find_collisions(&[id], &bounds, &mut collisions);
 
-            if collide_ent.is_some() {
-                return CollisionSummary {
-                    collide_ent,
+            if has_collision {
+                return CollisionEvent {
+                    collisions,
                     can_move: false,
                     bounds,
                 };
             }
+
             if let Some(old_handle) = collider.get_area_handle() {
                 if old_handle != handle {
-                    self.nodes[old_handle].remove_object(entity);
+                    self.nodes[old_handle].remove_object(id);
 
-                    self.nodes[handle].insert_object(entity);
+                    self.nodes[handle].insert_object(id);
                 }
             }
 
             collider.set_position(new_pos.x, new_pos.y);
             collider.set_reached_border(false);
             collider.set_area_handle(Some(handle));
-            *self.objects.entry(entity).or_default() = collider.clone();
+            self.objects[id.0] = collider.clone();
 
-            return CollisionSummary {
-                collide_ent: None,
+            return CollisionEvent {
+                collisions,
                 can_move: true,
                 bounds,
             };
         }
 
         collider.set_reached_border(true);
-        self.objects
-            .entry(entity)
-            .or_default()
-            .set_reached_border(true);
+        self.objects[id.0].set_reached_border(true);
 
-        CollisionSummary {
-            collide_ent: None,
+        CollisionEvent {
+            collisions,
             can_move: false,
             bounds,
         }

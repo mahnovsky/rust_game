@@ -3,7 +3,7 @@ use crate::{
     collider2d::{Collider2d, CollisionEvent},
     object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable},
     player_config::{PlayerController, PlayerState},
-    quad_tree::QuadTree,
+    quad_tree::{QuadTree, TreeId},
     sprite::Sprite,
     transform::Transform,
 };
@@ -19,11 +19,9 @@ impl MoveSystem {
     }
 }
 
-pub fn move_update(world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
+pub fn move_update(world: &mut World, quad_tree: &mut QuadTree, delta: f32) -> Vec<TreeId> {
     let mut query = <(Entity, &Movable, &mut Transform, &mut Collider2d)>::query();
-
-    //let mut move_list = Vec::<(&mut Transform, glm::Vec2)>::new();
-
+    let mut collisions = Vec::new();
     for (entity, movable, transform, collider) in query.iter_mut(world) {
         let move_delta = movable.get_move_fragment(delta);
 
@@ -34,21 +32,13 @@ pub fn move_update(world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
 
         if summary.can_move {
             transform.set_position(&new_pos);
-        } //else {
-          //    println!("Cant move {:?}", summary);
-          //}
+        }
         transform.set_direction(movable.get_direction_vec());
 
-        //println!("move system update {:?}", movable.get_direction_vec());
-        //let Some(summary) = quad_tree.move_object(&world, *entity, new_pos) else {
-        //    return;
-        //};
-
-        //if summary.can_move {
-        //    transform.set_position(&new_pos);
-        //} else if let Some(collide_ent) = summary.collide_ent {
-        //    //println!("Cant move help!!! {:?}", new_pos);
-        //    // TODO: entity.push_event(CollisionEvent::OnEntity(collide_ent));
-        //}
+        if !summary.collisions.is_empty() {
+            collisions.extend(summary.collisions);
+        }
     }
+
+    collisions
 }

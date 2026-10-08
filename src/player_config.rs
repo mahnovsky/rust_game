@@ -14,16 +14,12 @@ use crate::{
 };
 use fxhash::FxHashMap;
 use glfw::{
-    Action,
     Key::{self, Q},
     Window,
 };
-use glm::modf_vec;
 use legion::*;
-use rand::rand_core::utils::Word;
-use std::cell::RefMut;
+use std::fs;
 use std::str::FromStr;
-use std::{collections::HashMap, fs};
 use strum_macros::EnumString;
 use yaml_rust2::{Yaml, YamlLoader};
 
@@ -40,29 +36,6 @@ pub struct PlayerController {
     direction: Direction,
     input_layout: InputLayoutComponent,
 }
-/*
-impl Listener<PlayerAction> for PlayerController {
-    fn on_event(&mut self, player_input: PlayerAction) {
-        self.direction = match player_input {
-            PlayerAction::MoveLeft => glm::vec2(-1., 0.),
-            PlayerAction::MoveRight => glm::vec2(1., 0.),
-            PlayerAction::MoveTop => glm::vec2(0., 1.),
-            PlayerAction::MoveDown => glm::vec2(0., -1.),
-            PlayerAction::None | PlayerAction::Shoot => self.direction,
-        };
-
-        self.state = match player_input {
-            PlayerAction::MoveLeft
-            | PlayerAction::MoveRight
-            | PlayerAction::MoveTop
-            | PlayerAction::MoveDown => PlayerState::Move,
-            PlayerAction::Shoot => self.state,
-            _ => PlayerState::Idle,
-        };
-
-        //println!("Current state {:?}", self.state);
-    }
-}*/
 
 impl PlayerController {
     fn new(player_index: u32, direction: Direction, input_layout: InputLayoutComponent) -> Self {
@@ -179,18 +152,20 @@ pub fn spawn_player(
     let size = 50_f32;
     let bsize = size * 0.9;
     let bounds = Bounds::with_center_position(pos.x, pos.y, bsize, bsize);
+    let mut collider = Collider2d::new(bounds);
+
+    let placed = quad_tree.place(&mut collider);
+    assert!(placed);
 
     let entity = world.push((
         Sprite::new(size, size, "tank.png"),
         Transform::with_direction(pos, dir.to_vec()),
-        Collider2d::new(bounds),
+        collider,
         Movable::new(200, dir, Stay),
         Damagable::new(10),
         PlayerController::new(index, dir, config.get_input_component()),
         Gun::new(2),
     ));
-
-    let _ = quad_tree.place(world, entity);
 
     Some(entity)
 }
@@ -237,7 +212,6 @@ impl PlayerController {
 
     fn update_state(&mut self, player_input: Option<PlayerAction>) {
         if let Some(player_input) = player_input {
-            println!("Input {:?}", player_input);
             self.direction = match player_input {
                 PlayerAction::MoveLeft => Direction::Left,
                 PlayerAction::MoveRight => Direction::Right,
@@ -256,9 +230,6 @@ impl PlayerController {
             };
         } else {
             self.state = Idle;
-        }
-        if self.state != Idle {
-            println!("Current state {:?}", self.state);
         }
     }
 

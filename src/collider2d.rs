@@ -1,4 +1,7 @@
-use crate::{bounds::Bounds, quad_tree::Handle};
+use crate::{
+    bounds::Bounds,
+    quad_tree::{Handle, TreeId},
+};
 use legion::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -9,6 +12,7 @@ pub enum CollisionEvent {
 
 #[derive(Debug, Clone, Default)]
 pub struct Collider2d {
+    tree_id: TreeId,
     bounds: Bounds,
     area_handle: Option<Handle>,
     reached_border: bool,
@@ -18,6 +22,7 @@ pub struct Collider2d {
 impl Collider2d {
     pub fn new(bounds: Bounds) -> Self {
         Self {
+            tree_id: TreeId::INVALID,
             bounds,
             area_handle: None,
             reached_border: false,
@@ -27,6 +32,7 @@ impl Collider2d {
 
     pub fn with_ignore(bounds: Bounds, ignores: Vec<Entity>) -> Self {
         Self {
+            tree_id: TreeId::INVALID,
             bounds,
             area_handle: None,
             reached_border: false,
@@ -63,5 +69,13 @@ impl Collider2d {
 
     pub fn get_area_handle(&self) -> Option<Handle> {
         self.area_handle
+    }
+
+    pub fn get_tree_id(&self) -> TreeId {
+        self.tree_id
+    }
+
+    pub fn set_tree_id(&mut self, tree_id: TreeId) {
+        self.tree_id = tree_id;
     }
 }
