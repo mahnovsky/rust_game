@@ -3,7 +3,7 @@ use crate::collider2d::Collider2d;
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use legion::*;
 use std::cell::Cell;
-use std::collections::VecDeque;
+use std::collections::{self, VecDeque};
 use std::ops::{Index, IndexMut};
 use std::thread::Thread;
 
@@ -29,9 +29,9 @@ const MAX_NODE_COUNT_U8: u8 = get_count(MAX_DEPTH as i32);
 const MAX_NODE_COUNT: usize = MAX_NODE_COUNT_U8 as usize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct TreeId(usize);
+pub struct CollisionObjectId(usize);
 
-impl TreeId {
+impl CollisionObjectId {
     pub const INVALID: Self = Self(usize::MAX);
 }
 
@@ -59,7 +59,7 @@ pub struct AreaNode {
     parent: Handle,
     children: Option<[Handle; CHUNKS]>,
     bounds: Bounds,
-    objects: FxHashSet<TreeId>,
+    objects: FxHashSet<CollisionObjectId>,
 }
 
 impl AreaNode {
@@ -77,13 +77,13 @@ impl AreaNode {
         None
     }
 
-    fn insert_object(&mut self, object_id: TreeId) {
-        println!("Object {:?} enter area {:?}", object_id, self.handle.index);
+    fn insert_object(&mut self, object_id: CollisionObjectId) {
+        //println!("Object {:?} enter area {:?}", object_id, self.handle.index);
         self.objects.insert(object_id);
     }
 
-    fn remove_object(&mut self, object_id: TreeId) {
-        println!("Object {:?} leave area {:?}", object_id, self.handle.index);
+    fn remove_object(&mut self, object_id: CollisionObjectId) {
+        //println!("Object {:?} leave area {:?}", object_id, self.handle.index);
         self.objects.remove(&object_id);
     }
 }
@@ -121,14 +121,14 @@ impl<const N: usize> IndexMut<Handle> for AreaMap<N> {
 }
 
 #[derive(Debug, Clone)]
-pub struct CollisionEvent {
-    pub collisions: Vec<TreeId>,
+pub struct MoveResult {
+    pub collisions: Vec<CollisionObjectId>,
     pub can_move: bool,
     pub bounds: Bounds,
 }
 
 pub struct QuadTree {
-    objects: Vec<Collider2d>,
+    objects: Vec<Option<Collider2d>>,
     nodes: AreaMap<MAX_NODE_COUNT>,
     tail: Cell<u8>,
     bounds: Bounds,
@@ -245,7 +245,7 @@ impl QuadTree {
         prev_handle
     }
 
-    pub fn on_entity_removed(&mut self, id: TreeId) {
+    pub fn on_entity_removed(&mut self, id: CollisionObjectId) {
         let handle = self.find_child_node_if(self.root, |node| {
             if let Some(node) = node {
                 return node.objects.contains(&id);
@@ -257,12 +257,24 @@ impl QuadTree {
         }
     }
 
-    fn add_new_object(&mut self, collider: &mut Collider2d) -> TreeId {
-        let id = TreeId(self.objects.len());
+    fn add_new_object(&mut self, collider: &mut Collider2d) -> CollisionObjectId {
+        let id = if let Some(slot) = self
+            .objects
+            .iter_mut()
+            .enumerate()
+            .find(|(index, x)| x.is_none())
+        {
+            _ = slot.1.insert(collider.clone());
+
+            CollisionObjectId(slot.0)
+        } else {
+            let id = CollisionObjectId(self.objects.len());
+            self.objects.push(Some(collider.clone()));
+
+            id
+        };
 
         collider.set_tree_id(id);
-        self.objects.push(collider.clone());
-
         id
     }
 
@@ -290,25 +302,26 @@ impl QuadTree {
 
     fn find_collisions(
         &self,
-        ignored: &[TreeId],
+        ignored: &[CollisionObjectId],
         bounds: &Bounds,
-        collisions: &mut Vec<TreeId>,
+        collisions: &mut Vec<CollisionObjectId>,
     ) -> bool {
         let mut next_handle = Some(self.root);
         let mut check_nodes = VecDeque::new();
         let collisions_before = collisions.len();
         while let Some(handle) = next_handle {
             let node = &self.nodes[handle];
-            let found_collision: Vec<TreeId> = node
+            let found_collision: Vec<CollisionObjectId> = node
                 .objects
                 .iter()
                 .filter(|e| !ignored.contains(e))
-                .filter_map(|id| self.objects.get(id.0).map(|x| (id, x)))
-                .filter(|(id, x)| {
-                    //bounds.has_collision(&x.get_bounds())
-                    x.get_bounds().has_collision(bounds)
+                .filter_map(|id| self.objects.get(id.0).map(|x| (*id, x)))
+                .filter_map(|(id, x)| {
+                    //x.get_bounds().has_collision(bounds)
+                    x.as_ref()
+                        .map(|c| c.get_bounds().has_collision(bounds).then_some(id))
                 })
-                .map(|(id, _)| *id)
+                .filter_map(|id| id)
                 .collect();
 
             collisions.extend(found_collision);
@@ -332,8 +345,8 @@ impl QuadTree {
         entity: Entity,
         new_pos: glm::Vec2,
         collider: &mut Collider2d,
-    ) -> CollisionEvent {
-        assert!(collider.get_tree_id() != TreeId::INVALID);
+    ) -> MoveResult {
+        assert!(collider.get_tree_id() != CollisionObjectId::INVALID);
         let id = collider.get_tree_id();
         let mut bounds = collider.get_bounds();
         bounds.set_center_position(new_pos.x, new_pos.y);
@@ -345,7 +358,7 @@ impl QuadTree {
             let has_collision = self.find_collisions(&[id], &bounds, &mut collisions);
 
             if has_collision {
-                return CollisionEvent {
+                return MoveResult {
                     collisions,
                     can_move: false,
                     bounds,
@@ -363,9 +376,9 @@ impl QuadTree {
             collider.set_position(new_pos.x, new_pos.y);
             collider.set_reached_border(false);
             collider.set_area_handle(Some(handle));
-            self.objects[id.0] = collider.clone();
+            self.objects[id.0] = Some(collider.clone());
 
-            return CollisionEvent {
+            return MoveResult {
                 collisions,
                 can_move: true,
                 bounds,
@@ -373,12 +386,21 @@ impl QuadTree {
         }
 
         collider.set_reached_border(true);
-        self.objects[id.0].set_reached_border(true);
+        self.objects[id.0] = None;
 
-        CollisionEvent {
+        MoveResult {
             collisions,
             can_move: false,
             bounds,
+        }
+    }
+
+    pub fn update(&mut self, world: &World) {
+        self.objects.fill(None);
+        let mut query = <(Entity, &Collider2d)>::query();
+        for (ent, collider) in query.iter(world) {
+            let id = collider.get_tree_id();
+            self.objects[id.0] = Some(collider.clone());
         }
     }
 }

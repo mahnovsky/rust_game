@@ -3,26 +3,43 @@ use crate::{
     bounds::Bounds,
     collider2d::Collider2d,
     object_components::{
-        Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable, MoveSwitch::Stay,
+        Bullet, BulletSpawner, Damagable, Direction, Gun, Lifetime, Movable,
+        MoveSwitch::{Forward, Stay},
     },
     quad_tree::QuadTree,
     sprite::Sprite,
     transform::Transform,
 };
 use legion::*;
+use rand::{rngs::ThreadRng, RngExt};
 
 enum AiCommand {
     ChangeDir,
     Shoot,
 }
-
-struct AiController {
-    dir: glm::Vec2,
+pub struct AiController {
+    update_time: f32,
+    new_direction: Option<Direction>,
 }
 
 impl AiController {
-    fn new(dir: glm::Vec2) -> Self {
-        Self { dir }
+    pub fn new() -> Self {
+        Self {
+            update_time: 1.0,
+            new_direction: None,
+        }
+    }
+
+    pub fn consume_direction(&mut self) -> Option<Direction> {
+        self.new_direction.take()
+    }
+
+    pub fn update_remaining(&mut self, dt: f32, rng: &mut ThreadRng, prev_dir: Direction) {
+        self.update_time -= dt;
+        if self.update_time <= 0_f32 {
+            self.update_time = rng.random_range::<f32, _>(1.0..3.0);
+            self.new_direction = Some(prev_dir.get_rng(rng));
+        }
     }
 }
 
@@ -83,17 +100,15 @@ impl AiSystem {
         let size = 50_f32;
         let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
 
-        if quad_tree.can_place(world, &bounds) {
-            let mut collider = Collider2d::new(bounds);
-            quad_tree.place(&mut collider);
-
+        let mut collider = Collider2d::new(bounds);
+        if quad_tree.place(&mut collider) {
             let entity = world.push((
                 Sprite::new(size, size, "tank.png"),
                 Transform::with_direction(pos, dir),
                 collider,
-                Movable::new(200, crate::object_components::Direction::Down, Stay),
+                Movable::new(200, Direction::Down, Forward),
                 Damagable::new(10),
-                AiController::new(dir),
+                AiController::new(),
                 Gun::new(2),
             ));
         }
@@ -122,6 +137,30 @@ impl AiSystem {
     }
 }
 
-pub fn update(ai: &mut AiSystem, world: &mut World, quad_tree: &mut QuadTree, delta: f32) {
+pub fn update(
+    ai: &mut AiSystem,
+    world: &mut World,
+    quad_tree: &mut QuadTree,
+    rng: &mut ThreadRng,
+    delta: f32,
+) {
     ai.spawn_items(world, quad_tree, delta);
+
+    let mut query = <(
+        Entity,
+        &mut AiController,
+        &mut Movable,
+        &mut Gun,
+        &Transform,
+    )>::query();
+    for (ent, ai, mv, g, tr) in query.iter_mut(world) {
+        ai.update_remaining(delta, rng, mv.get_direction());
+
+        if let Some(new_dir) = ai.consume_direction() {
+            mv.set_direction(new_dir);
+        }
+        if g.can_spawn_bullet() {
+            g.setup_shoot(*ent, tr.get_position(), mv.get_direction());
+        }
+    }
 }

@@ -1,15 +1,11 @@
-use std::ops::Add;
-
-use crate::{
-    collider2d::CollisionEvent, object_components::MoveSwitch::Stay, player_config::PlayerAction,
-    transform::Transform,
-};
-use glfw::{ffi::GLFWcharfun, Key::Left};
 //use glm::Vec2;
 use legion::*;
 use nalgebra_glm::Vec2;
+use rand::{rngs::ThreadRng, seq::IteratorRandom, RngExt};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, EnumIter)]
 pub enum Direction {
     Left,
     Right,
@@ -18,8 +14,8 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn to_vec(&self) -> Vec2 {
-        match *self {
+    pub fn to_vec(self) -> Vec2 {
+        match self {
             Self::Left => Vec2::new(-1_f32, 0_f32),
             Self::Right => Vec2::new(1_f32, 0_f32),
             Self::Up => Vec2::new(0_f32, 1_f32),
@@ -27,8 +23,14 @@ impl Direction {
         }
     }
 
-    pub fn velocity(&self, speed: f32) -> Vec2 {
+    pub fn velocity(self, speed: f32) -> Vec2 {
         self.to_vec() * speed
+    }
+
+    pub fn get_rng(self, rng: &mut ThreadRng) -> Self {
+        let x = Direction::iter().filter(|x| *x != self);
+
+        x.choose(rng).unwrap_or(self)
     }
 }
 
@@ -155,23 +157,6 @@ impl Gun {
         });
     }
 }
-/*
-impl Listener<PlayerAction> for Gun {
-    fn on_event(&mut self, event: PlayerAction) {
-        println!("Gun action event receive");
-        if event == PlayerAction::Shoot && self.can_spawn_bullet() {
-            let id = self.get_entity_id().unwrap();
-            let ent = self.entity.upgrade().unwrap();
-            let tr = ent.get_component_clone::<Transform>().unwrap();
-            self.spawner = Some(BulletSpawner::new(
-                id,
-                self.damage,
-                tr.get_position(),
-                tr.get_direction(),
-            ))
-        }
-    }
-}*/
 
 pub enum BulletEvent {
     OnHit(u32),
@@ -205,16 +190,6 @@ impl Bullet {
         self.target.take()
     }
 }
-/*
-impl Listener<CollisionEvent> for Bullet {
-    fn on_event(&mut self, event: CollisionEvent) {
-        use CollisionEvent::OnEntity;
-        if let OnEntity(ent_id) = event {
-            //println!("Booomm**** {:?}", ent_id);
-            self.target = ent_id.into();
-        }
-    }
-}*/
 
 #[derive(Debug, Clone)]
 pub struct Damagable {
@@ -227,15 +202,12 @@ impl Damagable {
     }
 
     pub fn do_damage(&mut self, damage: u32) {
-        //if let Some(entity) = self.entity.upgrade() {
-        //    if self.health > damage {
-        //        self.health -= damage;
-        //    } else {
-        //        self.health = 0;
+        if self.health > damage {
+            self.health -= damage;
+        } else {
+            self.health = 0;
+        }
 
-        //        entity.kill();
-        //    }
-        //}
         println!("do damage for {}, dmg: {}", self.health, damage);
     }
 

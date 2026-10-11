@@ -19,8 +19,10 @@ use crate::{
 use fxhash::FxHashMap;
 use glfw::{
     Action::{self, Release},
-    Key, Window,
+    Key::{self, Q},
+    Window,
 };
+use glm::left_handed;
 use legion::{systems::CommandBuffer, *};
 use rand::rngs::ThreadRng;
 use std::{io::Repeat, ops::Deref};
@@ -64,6 +66,7 @@ pub struct Game {
     quad_tree: QuadTree,
     res: Resources,
     ai_controller: ai_system::AiSystem,
+    collisions: Vec<CollisionEvent>,
 }
 
 impl Game {
@@ -76,6 +79,7 @@ impl Game {
             quad_tree: QuadTree::new(Bounds::new(0_f32, 0_f32, width as f32, height as f32)),
             res: Resources::default(),
             ai_controller: AiSystem::new(),
+            collisions: Vec::new(),
         }
     }
 
@@ -86,26 +90,51 @@ impl Game {
         println!("fn init {:?}", p1);
     }
 
-    fn update_lifetimes(&mut self, dt: f32) {
-        let mut query = <&mut Lifetime>::query();
-        for lt in query.iter_mut(&mut self.world) {
+    fn update_lifetimes(&mut self, cb: &mut CommandBuffer, dt: f32) {
+        let mut query = <(Entity, &mut Lifetime)>::query();
+        for (ent, lt) in query.iter_mut(&mut self.world) {
             lt.update(dt);
+
+            if lt.is_time_out() {
+                cb.remove(*ent);
+            }
+        }
+
+        let mut query = <(Entity, &Damagable)>::query();
+        for (ent, d) in query.iter(&self.world) {
+            if d.is_dead() {
+                cb.remove(*ent);
+            }
         }
     }
 
     pub fn update(&mut self, window: &glfw::Window, dt: f32) {
         let mut cb = CommandBuffer::new(&self.world);
+        self.collisions.clear();
 
-        self.update_lifetimes(dt);
+        self.quad_tree.update(&self.world);
+        self.update_lifetimes(&mut cb, dt);
         ai_system::update(
             &mut self.ai_controller,
             &mut self.world,
             &mut self.quad_tree,
+            &mut self.rnd,
             dt,
         );
         player_config::update_players(&mut self.world, window);
-        let collisions = move_system::move_update(&mut self.world, &mut self.quad_tree, dt);
-        fire_system::update(&mut self.world, &mut self.quad_tree, &mut cb, dt);
+        move_system::move_update(
+            &mut self.world,
+            &mut self.quad_tree,
+            dt,
+            &mut self.collisions,
+        );
+        fire_system::update(
+            &mut self.world,
+            &mut self.quad_tree,
+            &mut cb,
+            dt,
+            &self.collisions,
+        );
 
         if !cb.is_empty() {
             cb.flush(&mut self.world, &mut self.res);

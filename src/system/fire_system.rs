@@ -1,10 +1,11 @@
 use std::collections;
 
+use fxhash::{FxBuildHasher, FxHashMap};
 use legion::{systems::CommandBuffer, *};
 
 use crate::{
     bounds::Bounds,
-    collider2d::Collider2d,
+    collider2d::{Collider2d, CollisionEvent},
     object_components::{Bullet, Damagable, Gun, Lifetime, Movable, MoveSwitch},
     quad_tree::QuadTree,
     sprite::Sprite,
@@ -27,17 +28,17 @@ fn update_bullet_spawns(
                 Bounds::with_center_position(pos.x, pos.y, 10., 10.),
                 vec![spawner.owner_id],
             );
-            quad_tree.place(&mut collider);
-
-            let bullet_ent = cb.push((
-                Bullet::new(spawner.owner_id, spawner.damage),
-                Transform::with_direction(pos, dir.to_vec()),
-                Movable::new(300, dir, MoveSwitch::Forward),
-                collider,
-                Sprite::new(10., 10., "tank1.png"),
-                Damagable::new(1),
-                Lifetime::new(5.),
-            ));
+            if quad_tree.place(&mut collider) {
+                let bullet_ent = cb.push((
+                    Bullet::new(spawner.owner_id, spawner.damage),
+                    Transform::with_direction(pos, dir.to_vec()),
+                    Movable::new(300, dir, MoveSwitch::Forward),
+                    collider,
+                    Sprite::new(10., 10., "tank1.png"),
+                    Damagable::new(1),
+                    Lifetime::new(5.),
+                ));
+            }
         }
     }
 }
@@ -47,17 +48,52 @@ fn update_bullet_collisions(
     quad_tree: &mut QuadTree,
     cb: &mut CommandBuffer,
     delta: f32,
+    collisions: &Vec<CollisionEvent>,
 ) {
-    let mut query = <(Entity, &Collider2d, &Bullet, &Lifetime)>::query();
-    for (entity, collider, bullet, lt) in query.iter(world) {
-        if collider.is_reached_border() || lt.is_time_out() {
+    if collisions.is_empty() {
+        return;
+    }
+
+    let mut query = <(Entity, &Collider2d, &Bullet)>::query();
+    let mut ents = FxHashMap::with_hasher(FxBuildHasher::new());
+
+    for (entity, collider, bullet) in query.iter(world) {
+        if collider.is_reached_border() {
             cb.remove(*entity);
+            continue;
+        }
+        let Some(event) = collisions.iter().find(|c| c.entity == *entity) else {
+            continue;
+        };
+
+        cb.remove(*entity);
+
+        let mut q = <(Entity, &Collider2d)>::query().filter(component::<Damagable>());
+        if let Some(collided_entity) = q
+            .iter(world)
+            .find(|(e, c)| event.collide_with.contains(&c.get_tree_id()))
+            .map(|(e, c)| *e)
+        {
+            ents.insert(collided_entity, bullet.clone());
+        }
+    }
+
+    let mut query = <(Entity, &mut Damagable)>::query();
+    for (ent, d) in query.iter_mut(world) {
+        if let Some(b) = ents.get(ent) {
+            d.do_damage(b.get_damage());
         }
     }
 }
 
-pub fn update(world: &mut World, quad_tree: &mut QuadTree, cb: &mut CommandBuffer, delta: f32) {
+pub fn update(
+    world: &mut World,
+    quad_tree: &mut QuadTree,
+    cb: &mut CommandBuffer,
+    delta: f32,
+    collisions: &Vec<CollisionEvent>,
+) {
     update_bullet_spawns(world, quad_tree, cb, delta);
 
-    update_bullet_collisions(world, quad_tree, cb, delta);
+    update_bullet_collisions(world, quad_tree, cb, delta, collisions);
 }
