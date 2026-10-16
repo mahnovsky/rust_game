@@ -81,8 +81,13 @@ impl Bounds {
     }
 
     pub fn has_collision(&self, other: &Bounds) -> bool {
-        (self.cross_by_x(other.x) || other.cross_by_x(self.x))
-            && (self.cross_by_y(other.y) || other.cross_by_y(self.y))
+        self.x < (other.x + other.width)
+            && (self.x + self.width) > other.x
+            && self.y < (other.y + other.height)
+            && (self.y + self.height) > other.y
+
+        //(self.cross_by_x(other.x) || other.cross_by_x(self.x))
+        //    && (self.cross_by_y(other.y) || other.cross_by_y(self.y))
     }
 
     pub fn is_inside(&self, x: f32, y: f32) -> bool {
@@ -95,6 +100,6 @@ impl Bounds {
         let (ox0, ox1) = other.get_hor_points();
         let (oy0, oy1) = other.get_vert_points();
 
-        x0 > ox0 && x1 < ox1 && y0 > oy0 && y1 < oy1
+        x0 >= ox0 && x1 <= ox1 && y0 >= oy0 && y1 <= oy1
     }
 }

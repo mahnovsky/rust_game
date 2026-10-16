@@ -48,7 +48,7 @@ fn update_bullet_collisions(
     quad_tree: &mut QuadTree,
     cb: &mut CommandBuffer,
     delta: f32,
-    collisions: &Vec<CollisionEvent>,
+    collisions: &[CollisionEvent],
 ) {
     if collisions.is_empty() {
         return;
@@ -58,15 +58,15 @@ fn update_bullet_collisions(
     let mut ents = FxHashMap::with_hasher(FxBuildHasher::new());
 
     for (entity, collider, bullet) in query.iter(world) {
-        if collider.is_reached_border() {
-            cb.remove(*entity);
-            continue;
-        }
         let Some(event) = collisions.iter().find(|c| c.entity == *entity) else {
             continue;
         };
 
         cb.remove(*entity);
+
+        if event.reached_border {
+            continue;
+        }
 
         let mut q = <(Entity, &Collider2d)>::query().filter(component::<Damagable>());
         if let Some(collided_entity) = q
@@ -91,7 +91,7 @@ pub fn update(
     quad_tree: &mut QuadTree,
     cb: &mut CommandBuffer,
     delta: f32,
-    collisions: &Vec<CollisionEvent>,
+    collisions: &[CollisionEvent],
 ) {
     update_bullet_spawns(world, quad_tree, cb, delta);
 

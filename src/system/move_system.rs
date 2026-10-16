@@ -34,15 +34,16 @@ pub fn move_update(
 
         let move_result = quad_tree.move_object(*entity, new_pos, collider);
 
-        if move_result.can_move {
+        if move_result.collisions.is_empty() && !move_result.reached_world_edge {
             transform.set_position(&new_pos);
         }
         transform.set_direction(movable.get_direction_vec());
 
-        if !move_result.collisions.is_empty() {
+        if !move_result.collisions.is_empty() || move_result.reached_world_edge {
             collisions.push(CollisionEvent {
                 entity: *entity,
                 collide_with: move_result.collisions,
+                reached_border: move_result.reached_world_edge,
             });
         }
     }

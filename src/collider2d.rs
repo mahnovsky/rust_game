@@ -1,6 +1,6 @@
 use crate::{
     bounds::Bounds,
-    quad_tree::{Handle, CollisionObjectId},
+    quad_tree::{CollisionObjectId, Handle},
 };
 use legion::*;
 
@@ -8,6 +8,7 @@ use legion::*;
 pub struct CollisionEvent {
     pub entity: Entity,
     pub collide_with: Vec<CollisionObjectId>,
+    pub reached_border: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -15,7 +16,6 @@ pub struct Collider2d {
     tree_id: CollisionObjectId,
     bounds: Bounds,
     area_handle: Option<Handle>,
-    reached_border: bool,
     pub collision_ignore: Option<Box<[Entity]>>,
 }
 
@@ -25,7 +25,6 @@ impl Collider2d {
             tree_id: CollisionObjectId::INVALID,
             bounds,
             area_handle: None,
-            reached_border: false,
             collision_ignore: None,
         }
     }
@@ -35,7 +34,6 @@ impl Collider2d {
             tree_id: CollisionObjectId::INVALID,
             bounds,
             area_handle: None,
-            reached_border: false,
             collision_ignore: Some(ignores.into_boxed_slice()),
         }
     }
@@ -53,14 +51,6 @@ impl Collider2d {
 
     pub fn get_bounds(&self) -> Bounds {
         self.bounds
-    }
-
-    pub fn is_reached_border(&self) -> bool {
-        self.reached_border
-    }
-
-    pub fn set_reached_border(&mut self, reached: bool) {
-        self.reached_border = reached;
     }
 
     pub fn set_area_handle(&mut self, handle: Option<Handle>) {
