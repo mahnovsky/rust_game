@@ -5,10 +5,16 @@ use crate::{
 use legion::*;
 
 #[derive(Debug, Clone)]
-pub struct CollisionEvent {
+pub struct CollisionInfo {
     pub entity: Entity,
-    pub collide_with: Vec<CollisionObjectId>,
-    pub reached_border: bool,
+    pub collide_with: Vec<Entity>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CollisionEvent {
+    Object(CollisionInfo),
+    Bullet(CollisionInfo),
+    EdgeCrossing(Entity),
 }
 
 #[derive(Debug, Clone, Default)]

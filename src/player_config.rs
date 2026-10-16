@@ -152,15 +152,11 @@ pub fn spawn_player(
     let size = 50_f32;
     let bsize = size * 0.9;
     let bounds = Bounds::with_center_position(pos.x, pos.y, bsize, bsize);
-    let mut collider = Collider2d::new(bounds);
-
-    let placed = quad_tree.place(&mut collider);
-    assert!(placed);
 
     let entity = world.push((
         Sprite::new(size, size, "tank.png"),
         Transform::with_direction(pos, dir.to_vec()),
-        collider,
+        Collider2d::new(bounds),
         Movable::new(200, dir, Stay),
         Damagable::new(10),
         PlayerController::new(index, dir, config.get_input_component()),

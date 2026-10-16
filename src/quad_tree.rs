@@ -124,13 +124,19 @@ impl<const N: usize> IndexMut<Handle> for AreaMap<N> {
 
 #[derive(Debug, Clone)]
 pub struct MoveResult {
-    pub collisions: Vec<CollisionObjectId>,
+    pub collisions: Vec<Entity>,
     pub reached_world_edge: bool,
     pub bounds: Bounds,
 }
 
+#[derive(Debug, Clone)]
+struct InternalObject {
+    entity: Entity,
+    bounds: Bounds,
+}
+
 pub struct QuadTree {
-    objects: Vec<Option<Collider2d>>,
+    objects: Vec<Option<InternalObject>>,
     nodes: AreaMap<MAX_NODE_COUNT>,
     tail: u8,
     bounds: Bounds,
@@ -253,24 +259,15 @@ impl QuadTree {
         if let Some(handle) = handle {
             self.nodes[handle].remove_object(id);
         }
+        self.objects[id.0] = None;
     }
 
-    fn add_new_object(&mut self, collider: &mut Collider2d) -> CollisionObjectId {
-        let id = if let Some(slot) = self
-            .objects
-            .iter_mut()
-            .enumerate()
-            .find(|(index, x)| x.is_none())
-        {
-            _ = slot.1.insert(collider.clone());
-
-            CollisionObjectId(slot.0)
-        } else {
-            let id = CollisionObjectId(self.objects.len());
-            self.objects.push(Some(collider.clone()));
-
-            id
-        };
+    fn add_new_object(&mut self, entity: Entity, collider: &mut Collider2d) -> CollisionObjectId {
+        let id = CollisionObjectId(self.objects.len());
+        self.objects.push(Some(InternalObject {
+            entity,
+            bounds: collider.get_bounds(),
+        }));
 
         collider.set_tree_id(id);
         id
@@ -281,13 +278,13 @@ impl QuadTree {
         !self.find_collisions(&[], bounds, &mut collisions)
     }
 
-    pub fn place(&mut self, collider: &mut Collider2d) -> bool {
+    pub fn place(&mut self, entity: Entity, collider: &mut Collider2d) -> bool {
         let bounds = collider.get_bounds();
         let mut collisions = Vec::new();
         self.find_collisions(&[], &bounds, &mut collisions);
 
         if let Some(handle) = self.get_place_node(&bounds) {
-            let id = self.add_new_object(collider);
+            let id = self.add_new_object(entity, collider);
 
             self.nodes[handle].insert_object(id);
             collider.set_area_handle(Some(handle));
@@ -315,10 +312,12 @@ impl QuadTree {
                 if ignored.contains(&id) {
                     continue;
                 }
-                if let Some(Some(x)) = self.objects.get(id.0) {
-                    if x.get_bounds().has_collision(bounds) {
-                        collisions.push(id);
-                    }
+                let Some(Some(x)) = self.objects.get(id.0) else {
+                    continue;
+                };
+
+                if x.bounds.has_collision(bounds) {
+                    collisions.push(id);
                 }
             }
 
@@ -332,6 +331,14 @@ impl QuadTree {
             next_handle = check_nodes.pop_front();
         }
         collisions.len() > collisions_before
+    }
+
+    fn map_collisions(&self, collidions: &[CollisionObjectId]) -> Vec<Entity> {
+        collidions
+            .iter()
+            .filter_map(|c| self.objects[c.0].clone())
+            .map(|x| x.entity)
+            .collect()
     }
 
     pub fn move_object(
@@ -351,6 +358,7 @@ impl QuadTree {
 
         if let Some(handle) = handle {
             let has_collision = self.find_collisions(&[id], &bounds, &mut collisions);
+            let collisions = self.map_collisions(&collisions);
             if has_collision {
                 return MoveResult {
                     collisions,
@@ -368,7 +376,7 @@ impl QuadTree {
 
             collider.set_position(new_pos.x, new_pos.y);
             collider.set_area_handle(Some(handle));
-            self.objects[id.0] = Some(collider.clone());
+            self.objects[id.0] = Some(InternalObject { entity, bounds });
 
             return MoveResult {
                 collisions,
@@ -376,39 +384,31 @@ impl QuadTree {
                 bounds,
             };
         }
-        //collider.set_reached_border(true);
 
         MoveResult {
-            collisions,
+            collisions: vec![],
             reached_world_edge: true,
             bounds,
         }
     }
 
-    /// Повна синхронізація дерева з ECS світом.
-    /// Очищає об'єкти з усіх вузлів і будує індексацію на основі актуальних позицій.
-    pub fn update(&mut self, world: &World) {
-        // 1. Повністю очищаємо списки об'єктів у всіх вузлах дерева
+    pub fn update(&mut self, world: &mut World) {
         for i in 0..(self.tail as usize) {
             self.nodes.0[i].objects.clear();
         }
-        self.objects.fill(None);
-        // 2. Наново заповнюємо дерево та масив актуальними даними з ECS
-        let mut query = <(Entity, &Collider2d)>::query();
-        // Тут ми використовуємо небезпечне приведення або mut_cast, але оскільки це ECS update,
-        // нам потрібно оновити внутрішні ID у самих компонентів, якщо вони нові, або зчитати старі.
-        // Для спрощення логіки: вважаємо, що компоненти вже мають або отримують правильні ID.
-        for (_ent, collider) in query.iter(world) {
-            let id = collider.get_tree_id();
-            if id == CollisionObjectId::INVALID {
-                continue;
-            }
-            // Записуємо копію колайдера в глобальний масив дерева
+        self.objects.clear();
+        let mut query = <(Entity, &mut Collider2d)>::query();
+        for (entity, collider) in query.iter_mut(world) {
+            let id = self.add_new_object(*entity, collider);
+
             if id.0 >= self.objects.len() {
-                self.objects.resize(id.0 + 1, None);
+                self.objects.resize_with(id.0 + 1, || None);
             }
-            self.objects[id.0] = Some(collider.clone());
-            // Кладемо об'єкт у правильний вузол дерева на основі його поточних bounds
+            self.objects[id.0] = Some(InternalObject {
+                entity: *entity,
+                bounds: collider.get_bounds(),
+            });
+
             if let Some(handle) = self.get_place_node(&collider.get_bounds()) {
                 self.nodes[handle].insert_object(id);
             }

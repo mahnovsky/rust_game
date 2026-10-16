@@ -112,7 +112,7 @@ impl Game {
         let mut cb = CommandBuffer::new(&self.world);
         self.collisions.clear();
 
-        self.quad_tree.update(&self.world);
+        self.quad_tree.update(&mut self.world);
         self.update_lifetimes(&mut cb, dt);
         ai_system::update(
             &mut self.ai_controller,

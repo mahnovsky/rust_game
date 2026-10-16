@@ -100,18 +100,19 @@ impl AiSystem {
         let size = 50_f32;
         let bounds = Bounds::with_center_position(pos.x, pos.y, size, size);
 
-        let mut collider = Collider2d::new(bounds);
-        if quad_tree.place(&mut collider) {
-            let entity = world.push((
-                Sprite::new(size, size, "tank.png"),
-                Transform::with_direction(pos, dir),
-                collider,
-                Movable::new(200, Direction::Down, Forward),
-                Damagable::new(10),
-                AiController::new(),
-                Gun::new(2),
-            ));
+        if !quad_tree.can_place(world, &bounds) {
+            return;
         }
+
+        let entity = world.push((
+            Sprite::new(size, size, "tank.png"),
+            Transform::with_direction(pos, dir),
+            Collider2d::new(bounds),
+            Movable::new(200, Direction::Down, Forward),
+            Damagable::new(10),
+            AiController::new(),
+            Gun::new(2),
+        ));
 
         println!("On AI Tank spawned");
     }
