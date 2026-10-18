@@ -3,10 +3,10 @@
 
 use crate::{
     bounds::Bounds,
-    collider2d::{Collider2d, CollisionEvent},
+    collider2d::CollisionEvent,
     map::Map,
-    object_components::{Bullet, Damagable, Gun, Lifetime, Movable},
-    player_config::{self, spawn_player, PlayerAction, PlayerController, PlayerState},
+    object_components::{Damagable, Lifetime, RemovedMarkerComponent},
+    player_config::{self, spawn_player, PlayerAction, PlayerController},
     quad_tree::QuadTree,
     render::{Drawable, Render},
     sprite::Sprite,
@@ -18,14 +18,12 @@ use crate::{
 };
 use fxhash::FxHashMap;
 use glfw::{
-    Action::{self, Release},
-    Key::{self, Q},
+    Action::{self},
+    Key::{self},
     Window,
 };
-use glm::left_handed;
 use legion::{systems::CommandBuffer, *};
 use rand::rngs::ThreadRng;
-use std::{io::Repeat, ops::Deref};
 
 #[derive(Debug, Clone)]
 pub struct InputLayoutComponent {
@@ -96,14 +94,14 @@ impl Game {
             lt.update(dt);
 
             if lt.is_time_out() {
-                cb.remove(*ent);
+                cb.add_component(*ent, RemovedMarkerComponent {});
             }
         }
 
         let mut query = <(Entity, &Damagable)>::query();
         for (ent, d) in query.iter(&self.world) {
             if d.is_dead() {
-                cb.remove(*ent);
+                cb.add_component(*ent, RemovedMarkerComponent);
             }
         }
     }
@@ -112,7 +110,6 @@ impl Game {
         let mut cb = CommandBuffer::new(&self.world);
         self.collisions.clear();
 
-        self.quad_tree.update(&mut self.world);
         self.update_lifetimes(&mut cb, dt);
         ai_system::update(
             &mut self.ai_controller,
@@ -136,11 +133,20 @@ impl Game {
             &self.collisions,
         );
 
-        if !cb.is_empty() {
-            cb.flush(&mut self.world, &mut self.res);
-        }
+        self.quad_tree
+            .update(&mut self.world, &mut cb, &mut self.res);
+
+        self.remove_all_marked_entities(&mut cb);
 
         self.frame_counter += 1;
+    }
+
+    fn remove_all_marked_entities(&mut self, cb: &mut CommandBuffer) {
+        let mut q = <(Entity, &RemovedMarkerComponent)>::query();
+        for (ent, _) in q.iter(&self.world) {
+            cb.remove(*ent);
+        }
+        cb.flush(&mut self.world, &mut self.res);
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {

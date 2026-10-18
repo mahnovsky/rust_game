@@ -1,15 +1,14 @@
-use std::collections;
-
-use fxhash::{FxBuildHasher, FxHashMap};
 use legion::{systems::CommandBuffer, *};
 
 use crate::{
     bounds::Bounds,
     collider2d::{
-        Collider2d,
-        CollisionEvent::{self, EdgeCrossing},
+        Collider2d, ColliderRegisterComponent,
+        CollisionEvent::{self},
     },
-    object_components::{Bullet, Damagable, Gun, Lifetime, Movable, MoveSwitch},
+    object_components::{
+        Bullet, Damagable, Gun, Lifetime, Movable, MoveSwitch, RemovedMarkerComponent,
+    },
     quad_tree::QuadTree,
     sprite::Sprite,
     transform::Transform,
@@ -32,6 +31,7 @@ fn update_bullet_spawns(
                 Bullet::new(spawner.owner_id, spawner.damage),
                 Transform::with_direction(pos, dir.to_vec()),
                 Movable::new(300, dir, MoveSwitch::Forward),
+                ColliderRegisterComponent,
                 Collider2d::with_ignore(
                     Bounds::with_center_position(pos.x, pos.y, 10., 10.),
                     vec![spawner.owner_id],
@@ -68,7 +68,7 @@ fn update_bullet_collisions(
                     continue;
                 };
 
-                cb.remove(info.entity);
+                cb.add_component(info.entity, RemovedMarkerComponent {});
 
                 for entity in info.collide_with.iter() {
                     let Ok(ref mut entry) = world.entry_mut(*entity) else {
@@ -83,9 +83,9 @@ fn update_bullet_collisions(
                 }
             }
             CollisionEvent::EdgeCrossing(entity) => {
-                if let Ok(entry) = world.entry_ref(*entity) {
+                if let Ok(entry) = world.entry_mut(*entity) {
                     if entry.get_component::<Bullet>().is_ok() {
-                        cb.remove(*entity);
+                        cb.add_component(*entity, RemovedMarkerComponent {});
                     }
                 }
             }

@@ -247,3 +247,5 @@ impl Lifetime {
         self.time_out
     }
 }
+
+pub struct RemovedMarkerComponent;

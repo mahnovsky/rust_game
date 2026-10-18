@@ -1,3 +1,5 @@
+use std::str;
+
 use crate::{
     bounds::Bounds,
     quad_tree::{CollisionObjectId, Handle},
@@ -16,6 +18,8 @@ pub enum CollisionEvent {
     Bullet(CollisionInfo),
     EdgeCrossing(Entity),
 }
+
+pub struct ColliderRegisterComponent;
 
 #[derive(Debug, Clone, Default)]
 pub struct Collider2d {

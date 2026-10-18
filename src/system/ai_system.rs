@@ -1,11 +1,8 @@
 //use super::system_trait::System;
 use crate::{
     bounds::Bounds,
-    collider2d::Collider2d,
-    object_components::{
-        Bullet, BulletSpawner, Damagable, Direction, Gun, Lifetime, Movable,
-        MoveSwitch::{Forward, Stay},
-    },
+    collider2d::{Collider2d, ColliderRegisterComponent},
+    object_components::{Damagable, Direction, Gun, Movable, MoveSwitch::Forward},
     quad_tree::QuadTree,
     sprite::Sprite,
     transform::Transform,
@@ -107,6 +104,7 @@ impl AiSystem {
         let entity = world.push((
             Sprite::new(size, size, "tank.png"),
             Transform::with_direction(pos, dir),
+            ColliderRegisterComponent,
             Collider2d::new(bounds),
             Movable::new(200, Direction::Down, Forward),
             Damagable::new(10),

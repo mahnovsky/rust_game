@@ -1,20 +1,19 @@
 use crate::{
     bounds::Bounds,
-    collider2d::Collider2d,
+    collider2d::{Collider2d, ColliderRegisterComponent},
     game::InputLayoutComponent,
     object_components::{
-        Bullet, Damagable, Direction, Gun, Lifetime, Movable,
+        Damagable, Direction, Gun, Movable,
         MoveSwitch::{self, Stay},
     },
     player_config::{PlayerAction::Shoot, PlayerState::Idle},
     quad_tree::QuadTree,
-    render::Render,
     sprite::Sprite,
-    transform::{self, Transform},
+    transform::Transform,
 };
 use fxhash::FxHashMap;
 use glfw::{
-    Key::{self, Q},
+    Key::{self},
     Window,
 };
 use legion::*;
@@ -156,6 +155,7 @@ pub fn spawn_player(
     let entity = world.push((
         Sprite::new(size, size, "tank.png"),
         Transform::with_direction(pos, dir.to_vec()),
+        ColliderRegisterComponent,
         Collider2d::new(bounds),
         Movable::new(200, dir, Stay),
         Damagable::new(10),

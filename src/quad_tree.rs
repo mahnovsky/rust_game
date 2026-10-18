@@ -1,7 +1,9 @@
 use crate::bounds::Bounds;
-use crate::collider2d::Collider2d;
+use crate::collider2d::{Collider2d, ColliderRegisterComponent};
+use crate::object_components::RemovedMarkerComponent;
+use legion::systems::CommandBuffer;
 use legion::*;
-use std::collections::{self, VecDeque};
+use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
 
 const CHUNKS: usize = 4;
@@ -263,11 +265,23 @@ impl QuadTree {
     }
 
     fn add_new_object(&mut self, entity: Entity, collider: &mut Collider2d) -> CollisionObjectId {
-        let id = CollisionObjectId(self.objects.len());
-        self.objects.push(Some(InternalObject {
-            entity,
-            bounds: collider.get_bounds(),
-        }));
+        let id = if let Some(free_slot) = self.objects.iter().position(|obj| obj.is_none()) {
+            let free_id = CollisionObjectId(free_slot);
+            self.objects[free_slot] = Some(InternalObject {
+                entity,
+                bounds: collider.get_bounds(),
+            });
+
+            free_id
+        } else {
+            let id = CollisionObjectId(self.objects.len());
+            self.objects.push(Some(InternalObject {
+                entity,
+                bounds: collider.get_bounds(),
+            }));
+
+            id
+        };
 
         collider.set_tree_id(id);
         id
@@ -385,6 +399,12 @@ impl QuadTree {
             };
         }
 
+        if let Some(old_handle) = collider.get_area_handle() {
+            self.nodes[old_handle].remove_object(id);
+        }
+        self.objects[id.0] = None;
+        collider.set_area_handle(None);
+
         MoveResult {
             collisions: vec![],
             reached_world_edge: true,
@@ -392,25 +412,29 @@ impl QuadTree {
         }
     }
 
-    pub fn update(&mut self, world: &mut World) {
-        for i in 0..(self.tail as usize) {
-            self.nodes.0[i].objects.clear();
-        }
-        self.objects.clear();
-        let mut query = <(Entity, &mut Collider2d)>::query();
-        for (entity, collider) in query.iter_mut(world) {
-            let id = self.add_new_object(*entity, collider);
+    pub fn update(&mut self, world: &mut World, cb: &mut CommandBuffer, res: &mut Resources) {
+        // add Removed marker
+        cb.flush(world, res);
 
-            if id.0 >= self.objects.len() {
-                self.objects.resize_with(id.0 + 1, || None);
+        let mut query = <(Entity, &Collider2d, &RemovedMarkerComponent)>::query();
+        for (entity, collider, _) in query.iter(world) {
+            let id = collider.get_tree_id();
+            let handle = collider.get_area_handle();
+
+            if id != CollisionObjectId::INVALID {
+                self.on_entity_removed(id, handle);
             }
-            self.objects[id.0] = Some(InternalObject {
-                entity: *entity,
-                bounds: collider.get_bounds(),
-            });
+        }
+
+        let mut query = <(Entity, &mut Collider2d, &ColliderRegisterComponent)>::query();
+        for (entity, collider, _) in query.iter_mut(world) {
+            cb.remove_component::<ColliderRegisterComponent>(*entity);
+
+            let id = self.add_new_object(*entity, collider);
 
             if let Some(handle) = self.get_place_node(&collider.get_bounds()) {
                 self.nodes[handle].insert_object(id);
+                collider.set_area_handle(Some(handle));
             }
         }
     }
