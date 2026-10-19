@@ -1,4 +1,5 @@
 use legion::{systems::CommandBuffer, *};
+use rand::seq::IndexedRandom;
 
 use crate::{
     bounds::Bounds,
@@ -55,6 +56,19 @@ fn update_bullet_collisions(
         return;
     }
 
+    //let mut query =
+    //    <(Entity, &mut Damagable)>::query().filter(!component::<RemovedMarkerComponent>());
+
+    //for (entity, d) in query.iter_mut(world) {
+    //    let t = collisions.iter().map(|event| match event {
+    //        CollisionEvent::Object(obj) => Some(obj.entity),
+    //        CollisionEvent::Bullet(obj) => Some(obj.entity),
+    //        _ => None,
+    //    });
+
+    //    t.find(|x|)
+    //}
+
     for event in collisions {
         match event {
             CollisionEvent::Bullet(info) => {
@@ -68,12 +82,23 @@ fn update_bullet_collisions(
                     continue;
                 };
 
-                cb.add_component(info.entity, RemovedMarkerComponent {});
+                cb.add_component(info.entity, RemovedMarkerComponent);
 
                 for entity in info.collide_with.iter() {
                     let Ok(ref mut entry) = world.entry_mut(*entity) else {
                         continue;
                     };
+
+                    if let Ok(r) = entry.get_component::<RemovedMarkerComponent>() {
+                        continue;
+                    };
+
+                    if *entity == info.entity {
+                        println!(
+                            "CollisionEvent::Bullet with self {:?}",
+                            info.collide_with.len()
+                        );
+                    }
 
                     let Ok(dmg) = entry.get_component_mut::<Damagable>() else {
                         continue;

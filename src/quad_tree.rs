@@ -311,7 +311,7 @@ impl QuadTree {
 
     fn find_collisions(
         &self,
-        ignored: &[CollisionObjectId],
+        ignored: &[Entity],
         bounds: &Bounds,
         collisions: &mut Vec<CollisionObjectId>,
     ) -> bool {
@@ -323,12 +323,13 @@ impl QuadTree {
             let node = &self.nodes[handle];
 
             for &id in &node.objects {
-                if ignored.contains(&id) {
-                    continue;
-                }
-                let Some(Some(x)) = self.objects.get(id.0) else {
+                let Some(x) = &self.objects[id.0] else {
                     continue;
                 };
+
+                if ignored.contains(&x.entity) {
+                    continue;
+                }
 
                 if x.bounds.has_collision(bounds) {
                     collisions.push(id);
@@ -371,7 +372,15 @@ impl QuadTree {
         let handle = self.get_place_node(&bounds);
 
         if let Some(handle) = handle {
-            let has_collision = self.find_collisions(&[id], &bounds, &mut collisions);
+            let ignored = collider
+                .collision_ignore
+                .as_ref()
+                .map(|x| x.iter())
+                .unwrap_or_default();
+            let ignore_self = [entity];
+            let mut ignored = ignore_self.iter().chain(ignored);
+
+            let has_collision = self.find_collisions(&[entity], &bounds, &mut collisions);
             let collisions = self.map_collisions(&collisions);
             if has_collision {
                 return MoveResult {
@@ -390,7 +399,9 @@ impl QuadTree {
 
             collider.set_position(new_pos.x, new_pos.y);
             collider.set_area_handle(Some(handle));
-            self.objects[id.0] = Some(InternalObject { entity, bounds });
+            if let Some(obj) = self.objects[id.0].as_mut() {
+                obj.bounds = bounds;
+            }
 
             return MoveResult {
                 collisions,
@@ -399,11 +410,11 @@ impl QuadTree {
             };
         }
 
-        if let Some(old_handle) = collider.get_area_handle() {
-            self.nodes[old_handle].remove_object(id);
-        }
-        self.objects[id.0] = None;
-        collider.set_area_handle(None);
+        //if let Some(old_handle) = collider.get_area_handle() {
+        //    self.nodes[old_handle].remove_object(id);
+        //}
+        //self.objects[id.0] = None;
+        //collider.set_area_handle(None);
 
         MoveResult {
             collisions: vec![],
@@ -412,29 +423,28 @@ impl QuadTree {
         }
     }
 
-    pub fn update(&mut self, world: &mut World, cb: &mut CommandBuffer, res: &mut Resources) {
-        // add Removed marker
-        cb.flush(world, res);
-
-        let mut query = <(Entity, &Collider2d, &RemovedMarkerComponent)>::query();
-        for (entity, collider, _) in query.iter(world) {
-            let id = collider.get_tree_id();
-            let handle = collider.get_area_handle();
-
-            if id != CollisionObjectId::INVALID {
-                self.on_entity_removed(id, handle);
-            }
-        }
-
-        let mut query = <(Entity, &mut Collider2d, &ColliderRegisterComponent)>::query();
-        for (entity, collider, _) in query.iter_mut(world) {
+    pub fn update(&mut self, world: &mut World, cb: &mut CommandBuffer, _: &mut Resources) {
+        let mut query =
+            <(Entity, &mut Collider2d)>::query().filter(component::<ColliderRegisterComponent>());
+        for (entity, collider) in query.iter_mut(world) {
             cb.remove_component::<ColliderRegisterComponent>(*entity);
-
+            assert!(collider.get_tree_id() == CollisionObjectId::INVALID);
             let id = self.add_new_object(*entity, collider);
 
             if let Some(handle) = self.get_place_node(&collider.get_bounds()) {
                 self.nodes[handle].insert_object(id);
                 collider.set_area_handle(Some(handle));
+            }
+        }
+
+        let mut query =
+            <(Entity, &Collider2d)>::query().filter(component::<RemovedMarkerComponent>());
+        for (entity, collider) in query.iter(world) {
+            let id = collider.get_tree_id();
+            let handle = collider.get_area_handle();
+
+            if id != CollisionObjectId::INVALID {
+                self.on_entity_removed(id, handle);
             }
         }
     }

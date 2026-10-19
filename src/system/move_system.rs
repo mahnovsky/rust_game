@@ -1,10 +1,7 @@
 use crate::{
-    bounds::Bounds,
-    collider2d::{Collider2d, CollisionEvent, CollisionInfo},
-    object_components::{Bullet, BulletSpawner, Damagable, Gun, Lifetime, Movable},
-    player_config::{PlayerController, PlayerState},
+    collider2d::{Collider2d, ColliderRegisterComponent, CollisionEvent, CollisionInfo},
+    object_components::{Bullet, Movable, RemovedMarkerComponent},
     quad_tree::{CollisionObjectId, QuadTree},
-    sprite::Sprite,
     transform::Transform,
 };
 use legion::*;
@@ -31,7 +28,9 @@ pub fn move_update(
         &mut Transform,
         &mut Collider2d,
         TryRead<Bullet>,
-    )>::query();
+    )>::query()
+    .filter(!component::<ColliderRegisterComponent>());
+
     for (entity, movable, transform, collider, b) in query.iter_mut(world) {
         if collider.get_tree_id() == CollisionObjectId::INVALID {
             continue;

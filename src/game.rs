@@ -94,11 +94,12 @@ impl Game {
             lt.update(dt);
 
             if lt.is_time_out() {
-                cb.add_component(*ent, RemovedMarkerComponent {});
+                cb.add_component(*ent, RemovedMarkerComponent);
             }
         }
 
-        let mut query = <(Entity, &Damagable)>::query();
+        let mut query =
+            <(Entity, &Damagable)>::query().filter(!component::<RemovedMarkerComponent>());
         for (ent, d) in query.iter(&self.world) {
             if d.is_dead() {
                 cb.add_component(*ent, RemovedMarkerComponent);
@@ -138,6 +139,8 @@ impl Game {
 
         self.remove_all_marked_entities(&mut cb);
 
+        cb.flush(&mut self.world, &mut self.res);
+
         self.frame_counter += 1;
     }
 
@@ -146,7 +149,6 @@ impl Game {
         for (ent, _) in q.iter(&self.world) {
             cb.remove(*ent);
         }
-        cb.flush(&mut self.world, &mut self.res);
     }
 
     pub fn do_input(&mut self, event: &glfw::WindowEvent) {

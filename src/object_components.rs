@@ -149,10 +149,11 @@ impl Gun {
     }
 
     pub fn setup_shoot(&mut self, owner_id: Entity, pos: Vec2, dir: Direction) {
+        let dir_v: glm::Vec2 = dir.to_vec();
         self.spawner = Some(BulletSpawner {
             owner_id,
             damage: self.damage,
-            pos,
+            pos: pos + dir_v,
             dir,
         });
     }
