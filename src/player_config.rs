@@ -156,7 +156,7 @@ pub fn spawn_player(
         Sprite::new(size, size, "tank.png"),
         Transform::with_direction(pos, dir.to_vec()),
         ColliderRegisterComponent,
-        Collider2d::new(bounds),
+        Collider2d::new(bounds, 0),
         Movable::new(200, dir, Stay),
         Damagable::new(10),
         PlayerController::new(index, dir, config.get_input_component()),

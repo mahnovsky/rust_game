@@ -26,33 +26,17 @@ pub struct Collider2d {
     tree_id: CollisionObjectId,
     bounds: Bounds,
     area_handle: Option<Handle>,
-    pub collision_ignore: Option<Box<[Entity]>>,
+    flags: u32,
 }
 
 impl Collider2d {
-    pub fn new(bounds: Bounds) -> Self {
+    pub fn new(bounds: Bounds, flags: u32) -> Self {
         Self {
             tree_id: CollisionObjectId::INVALID,
             bounds,
             area_handle: None,
-            collision_ignore: None,
+            flags,
         }
-    }
-
-    pub fn with_ignore(bounds: Bounds, ignores: Vec<Entity>) -> Self {
-        Self {
-            tree_id: CollisionObjectId::INVALID,
-            bounds,
-            area_handle: None,
-            collision_ignore: Some(ignores.into_boxed_slice()),
-        }
-    }
-
-    pub fn is_ignored_entity(&self, id: Entity) -> bool {
-        if let Some(ignores) = &self.collision_ignore {
-            return ignores.contains(&id);
-        }
-        false
     }
 
     pub fn set_position(&mut self, x: f32, y: f32) {

@@ -16,6 +16,7 @@ use crate::{
     },
     transform::Transform,
 };
+use enumflags2::bitflags;
 use fxhash::FxHashMap;
 use glfw::{
     Action::{self},
@@ -24,6 +25,16 @@ use glfw::{
 };
 use legion::{systems::CommandBuffer, *};
 use rand::rngs::ThreadRng;
+
+#[bitflags]
+#[repr(u32)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CollisionFlags {
+    AiTank = 1 << 0,
+    PlayerTank = 1 << 1,
+    AiBullet = 1 << 2,
+    PlayerBullet = 1 << 3,
+}
 
 #[derive(Debug, Clone)]
 pub struct InputLayoutComponent {

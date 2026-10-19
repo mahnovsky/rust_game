@@ -2,6 +2,7 @@
 use crate::{
     bounds::Bounds,
     collider2d::{Collider2d, ColliderRegisterComponent},
+    game::CollisionFlags,
     object_components::{Damagable, Direction, Gun, Movable, MoveSwitch::Forward},
     quad_tree::QuadTree,
     sprite::Sprite,
@@ -100,12 +101,13 @@ impl AiSystem {
         if !quad_tree.can_place(world, &bounds) {
             return;
         }
-
+        let flags =
+            CollisionFlags::AiTank | CollisionFlags::PlayerTank | CollisionFlags::PlayerBullet;
         let entity = world.push((
             Sprite::new(size, size, "tank.png"),
             Transform::with_direction(pos, dir),
             ColliderRegisterComponent,
-            Collider2d::new(bounds),
+            Collider2d::new(bounds, flags.bits()),
             Movable::new(200, Direction::Down, Forward),
             Damagable::new(10),
             AiController::new(),

@@ -33,10 +33,7 @@ fn update_bullet_spawns(
                 Transform::with_direction(pos, dir.to_vec()),
                 Movable::new(300, dir, MoveSwitch::Forward),
                 ColliderRegisterComponent,
-                Collider2d::with_ignore(
-                    Bounds::with_center_position(pos.x, pos.y, 10., 10.),
-                    vec![spawner.owner_id],
-                ),
+                Collider2d::new(Bounds::with_center_position(pos.x, pos.y, 10., 10.), 0),
                 Sprite::new(10., 10., "tank1.png"),
                 Damagable::new(1),
                 Lifetime::new(5.),
@@ -56,18 +53,20 @@ fn update_bullet_collisions(
         return;
     }
 
-    //let mut query =
-    //    <(Entity, &mut Damagable)>::query().filter(!component::<RemovedMarkerComponent>());
+    let mut query =
+        <(Entity, &mut Damagable)>::query().filter(!component::<RemovedMarkerComponent>());
 
-    //for (entity, d) in query.iter_mut(world) {
-    //    let t = collisions.iter().map(|event| match event {
-    //        CollisionEvent::Object(obj) => Some(obj.entity),
-    //        CollisionEvent::Bullet(obj) => Some(obj.entity),
-    //        _ => None,
-    //    });
+    for (entity, d) in query.iter_mut(world) {
+        let t = collisions.iter().map(|event| match event {
+            CollisionEvent::Object(obj) => Some(obj),
+            CollisionEvent::Bullet(obj) => Some(obj),
+            _ => None,
+        });
 
-    //    t.find(|x|)
-    //}
+        if let Some(info) = t.flatten().find(|x| x.entity == *entity) {
+            //info.collide_with
+        }
+    }
 
     for event in collisions {
         match event {

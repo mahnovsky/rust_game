@@ -372,14 +372,6 @@ impl QuadTree {
         let handle = self.get_place_node(&bounds);
 
         if let Some(handle) = handle {
-            let ignored = collider
-                .collision_ignore
-                .as_ref()
-                .map(|x| x.iter())
-                .unwrap_or_default();
-            let ignore_self = [entity];
-            let mut ignored = ignore_self.iter().chain(ignored);
-
             let has_collision = self.find_collisions(&[entity], &bounds, &mut collisions);
             let collisions = self.map_collisions(&collisions);
             if has_collision {
